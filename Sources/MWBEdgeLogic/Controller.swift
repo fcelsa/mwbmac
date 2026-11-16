@@ -172,7 +172,7 @@ public final class Controller {
         exitPosition = position
         enteredRemoteAt = ProcessInfo.processInfo.systemUptime
         state = .remote(machine)
-        LocalCursor.lock()
+        LocalCursor.lock(at: position)
 
         // `PrepareToSwitchToMachine`: MachineSwitched alla nuova destinazione, poi il
         // cursore del PC viene portato nel punto d'ingresso con un movimento assoluto.
@@ -209,6 +209,8 @@ public final class Controller {
             let dx = Int(event.getIntegerValueField(.mouseEventDeltaX))
             let dy = Int(event.getIntegerValueField(.mouseEventDeltaY))
             if dx != 0 || dy != 0 { sendMouse(translator.mouseMove(dx: dx, dy: dy), to: machine) }
+            // Il cursore del Mac deve restare dov'era quando si è passati al PC.
+            if let exitPosition { LocalCursor.pin(at: exitPosition, current: event.location) }
         case .leftMouseDown: button(0, .down, machine)
         case .leftMouseUp: button(0, .up, machine)
         case .rightMouseDown: button(1, .down, machine)

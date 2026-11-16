@@ -96,10 +96,23 @@ public enum InputPermissions {
 
 /// Stato del cursore locale durante il controllo remoto.
 public enum LocalCursor {
-    /// Sgancia il cursore dal mouse: gli eventi continuano a portare i delta, ma il
-    /// cursore del Mac resta fermo dov'è.
-    public static func lock() {
+    /// Blocca il cursore del Mac nel punto indicato. `CGAssociateMouseAndMouseCursorPosition`
+    /// da solo non basta: per un processo che non è l'app in primo piano (è sempre il caso
+    /// di un'app da barra menu) il window server continua a muovere il cursore. Il blocco
+    /// vero lo fa `pin(at:)`, richiamato a ogni movimento.
+    public static func lock(at point: CGPoint) {
+        // Senza questo, dopo ogni riposizionamento il sistema congela gli eventi per 250 ms.
+        CGEventSource(stateID: .combinedSessionState)?.localEventsSuppressionInterval = 0
         CGAssociateMouseAndMouseCursorPosition(0)
+        CGWarpMouseCursorPosition(point)
+    }
+
+    /// Riporta il cursore nel punto di blocco se un movimento l'ha spostato. Il
+    /// riposizionamento non genera eventi e non altera i delta degli eventi successivi.
+    public static func pin(at point: CGPoint, current: CGPoint) {
+        if abs(current.x - point.x) > 0.5 || abs(current.y - point.y) > 0.5 {
+            CGWarpMouseCursorPosition(point)
+        }
     }
 
     public static func unlock(at point: CGPoint? = nil) {
