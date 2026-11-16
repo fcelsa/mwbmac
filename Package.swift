@@ -8,6 +8,7 @@ let package = Package(
     platforms: [.macOS(.v13)],
     products: [
         .executable(name: "mwbmac", targets: ["mwbmac"]),
+        .executable(name: "MWBMacHost", targets: ["MWBMacHost"]),
     ],
     targets: [
         .target(name: "MWBProtocol"),
@@ -15,6 +16,8 @@ let package = Package(
         .target(name: "MWBInputCapture", dependencies: ["MWBProtocol"]),
         .target(name: "MWBEdgeLogic", dependencies: ["MWBProtocol", "MWBTransport", "MWBInputCapture"]),
         .executableTarget(name: "mwbmac", dependencies: ["MWBProtocol", "MWBTransport", "MWBInputCapture", "MWBEdgeLogic"]),
+        // App da barra menu; il bundle .app si costruisce con scripts/build-app.sh.
+        .executableTarget(name: "MWBMacHost", dependencies: ["MWBProtocol", "MWBTransport", "MWBInputCapture", "MWBEdgeLogic"]),
         .testTarget(name: "MWBProtocolTests", dependencies: ["MWBProtocol"]),
         .testTarget(name: "MWBTransportTests", dependencies: ["MWBTransport", "MWBProtocol"]),
         .testTarget(name: "MWBInputCaptureTests", dependencies: ["MWBInputCapture"]),

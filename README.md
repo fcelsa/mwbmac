@@ -4,8 +4,38 @@ Client macOS nativo (Swift, zero dipendenze) per controllare un PC Windows con
 **PowerToys → Mouse Without Borders** usando tastiera e mouse del Mac. Sul PC non va
 installato nulla oltre a PowerToys. Analisi e protocollo: [docs/analisi.md](docs/analisi.md).
 
-Stato: fasi 1–4 della roadmap implementate come strumento da riga di comando
-(protocollo, trasporto, input remoto, cambio macchina). L'app da barra menu è la fase 5.
+Stato: fasi 1–5 della roadmap implementate (protocollo, trasporto, input remoto, cambio
+macchina, app da barra menu). Resta la fase 6, verifiche di campo.
+
+## App da barra menu
+
+```bash
+scripts/build-app.sh
+```
+
+costruisce e firma `build/MWB Mac Host.app` senza Xcode. Opzioni: `--install` lo copia in
+`/Applications`, `--run` lo avvia, `--debug` compila in debug.
+
+L'app vive solo nella barra menu: icona con lo stato (disattivato, in attesa del PC,
+connesso, controllo sul PC, problema), voci "Passa al PC / Torna al Mac", "Attivo",
+"Avvia al login", "Impostazioni…". Al primo avvio chiede i permessi **Accessibilità** e
+**Monitoraggio input** e parte da sola appena vengono concessi. Preferenze e security key
+sono le stesse dello strumento da riga di comando, che viaggia anche dentro il bundle
+(`MWB Mac Host.app/Contents/MacOS/mwbmac`). App e `mwbmac run` non vanno tenuti attivi
+insieme: usano la stessa porta e lo stesso MachineId.
+
+### Firma locale
+
+Senza altro, lo script firma **ad hoc**: funziona, ma macOS considera ogni build un'app
+diversa e i due permessi vanno tolti e riconcessi dopo ogni ricompilazione. Per evitarlo:
+
+```bash
+scripts/create-signing-cert.sh
+```
+
+crea nel portachiavi di login un certificato autofirmato "mwbmac local signing"; da quel
+momento `build-app.sh` lo usa da solo e i permessi restano validi fra una build e l'altra.
+Alla prima firma macOS chiede di autorizzare `codesign` a usare la chiave.
 
 ## Compilazione e test
 
@@ -88,5 +118,6 @@ manualmente al PC). In stato remoto l'input locale è soppresso: tenerla a mente
 | `MWBInputCapture` | CGEventTap, mappa keycode → VK Windows, traduzione mouse/rotella/tasti |
 | `MWBEdgeLogic` | rilevamento del bordo, preferenze, Keychain, macchina di stato locale/remoto |
 | `mwbmac` | riga di comando |
+| `MWBMacHost` | app da barra menu (AppKit + impostazioni SwiftUI) |
 
 Fuori perimetro per ora: appunti e trasferimento file.

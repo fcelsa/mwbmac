@@ -4,3 +4,4 @@
 *.xcodeproj
 # Sorgente PowerToys di riferimento (MIT, si riscarica dal repository Microsoft)
 reference/
+build/

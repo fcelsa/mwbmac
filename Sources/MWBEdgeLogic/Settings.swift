@@ -29,9 +29,16 @@ public struct Hotkey: Codable, Equatable, Sendable {
         if option { parts.append("⌥") }
         if shift { parts.append("⇧") }
         if command { parts.append("⌘") }
-        parts.append(keyCode == 0x35 ? "Esc" : "tasto 0x" + String(keyCode, radix: 16))
+        parts.append(Hotkey.keyNames.first { $0.keyCode == keyCode }?.name ?? "tasto 0x" + String(keyCode, radix: 16))
         return parts.joined()
     }
+
+    /// Tasti proposti dall'interfaccia per la scorciatoia.
+    public static let keyNames: [(keyCode: UInt16, name: String)] = [
+        (0x35, "Esc"), (0x31, "Spazio"), (0x24, "Invio"), (0x30, "Tab"),
+        (0x7A, "F1"), (0x78, "F2"), (0x63, "F3"), (0x76, "F4"), (0x60, "F5"), (0x61, "F6"),
+        (0x62, "F7"), (0x64, "F8"), (0x65, "F9"), (0x6D, "F10"), (0x67, "F11"), (0x6F, "F12"),
+    ]
 }
 
 public struct Settings: Codable, Equatable, Sendable {

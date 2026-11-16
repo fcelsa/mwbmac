@@ -64,10 +64,15 @@ porte 15100/15101 aperte nel firewall. Il nome del Mac deve essere risolvibile d
 
 ## Stato dell'implementazione
 
-Fasi 1–4 implementate come eseguibile da riga di comando `mwbmac` (vedi `README.md`).
-Target SwiftPM: `MWBProtocol`, `MWBTransport`, `MWBInputCapture`, `MWBEdgeLogic`, `mwbmac`.
+Fasi 1–5 implementate (vedi `README.md`): eseguibile da riga di comando `mwbmac` e app da
+barra menu `MWBMacHost`, il cui bundle si costruisce e firma con `scripts/build-app.sh`.
+Target SwiftPM: `MWBProtocol`, `MWBTransport`, `MWBInputCapture`, `MWBEdgeLogic`, `mwbmac`,
+`MWBMacHost`.
 I test usano **Swift Testing** (`import Testing`), non XCTest: sulla macchina di sviluppo
-ci sono solo i Command Line Tools, senza Xcode.
+ci sono solo i Command Line Tools, senza Xcode. Per lo stesso motivo in SwiftUI non si può
+usare `@State` (nell'SDK corrente è una macro e il plugin `SwiftUIMacros` manca): lo stato
+delle viste sta in `ObservableObject` con `@Published`. Ogni tanto `swift test` fallisce con
+"plugin for module 'TestingMacros' not found": è transitorio, basta rilanciarlo.
 
 Il sorgente in `reference/` è più recente di quello descritto in `docs/analisi.md`:
 dopo l'intestazione in chiaro salt+IV, il primo blocco cifrato di ogni direzione è un

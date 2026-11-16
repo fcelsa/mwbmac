@@ -22,6 +22,10 @@ public final class Controller {
     public private(set) var state: State = .local
     /// Notifica i cambi di stato (thread principale), per log o interfaccia.
     public var onStateChange: ((State) -> Void)?
+    /// Macchine connesse cambiate (thread principale).
+    public var onMachinesChanged: (([Session.Machine]) -> Void)?
+    /// La security key non coincide con quella del PC (thread principale).
+    public var onInvalidKey: (() -> Void)?
 
     private let settings: Settings
     private let session: Session
@@ -54,8 +58,21 @@ public final class Controller {
         session.onPacket = { [weak self] packet in
             DispatchQueue.main.async { self?.received(packet) }
         }
+        session.onMachineConnected = { [weak self] _ in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.onMachinesChanged?(self.session.connectedMachines)
+            }
+        }
         session.onMachineDisconnected = { [weak self] machine in
-            DispatchQueue.main.async { self?.machineDisconnected(machine) }
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.machineDisconnected(machine)
+                self.onMachinesChanged?(self.session.connectedMachines)
+            }
+        }
+        session.onInvalidKey = { [weak self] in
+            DispatchQueue.main.async { self?.onInvalidKey?() }
         }
         tap.handler = { [weak self] type, event in
             self?.handle(type: type, event: event) ?? .pass
@@ -97,6 +114,11 @@ public final class Controller {
             && flags.contains(.maskAlternate) == hotkey.option
             && flags.contains(.maskCommand) == hotkey.command
             && flags.contains(.maskShift) == hotkey.shift
+    }
+
+    /// Cambio manuale (stessa azione della scorciatoia), per la voce di menu.
+    public func toggleManually() {
+        toggle()
     }
 
     private func toggle() {
