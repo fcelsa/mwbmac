@@ -10,6 +10,8 @@ let package = Package(
     ],
     targets: [
         .target(name: "MWBProtocol"),
+        .target(name: "MWBTransport", dependencies: ["MWBProtocol"]),
         .testTarget(name: "MWBProtocolTests", dependencies: ["MWBProtocol"]),
+        .testTarget(name: "MWBTransportTests", dependencies: ["MWBTransport", "MWBProtocol"]),
     ]
 )
