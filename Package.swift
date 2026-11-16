@@ -7,13 +7,17 @@ let package = Package(
     name: "mwbmac",
     platforms: [.macOS(.v13)],
     products: [
+        .executable(name: "mwbmac", targets: ["mwbmac"]),
     ],
     targets: [
         .target(name: "MWBProtocol"),
         .target(name: "MWBTransport", dependencies: ["MWBProtocol"]),
         .target(name: "MWBInputCapture", dependencies: ["MWBProtocol"]),
+        .target(name: "MWBEdgeLogic", dependencies: ["MWBProtocol", "MWBTransport", "MWBInputCapture"]),
+        .executableTarget(name: "mwbmac", dependencies: ["MWBProtocol", "MWBTransport", "MWBInputCapture", "MWBEdgeLogic"]),
         .testTarget(name: "MWBProtocolTests", dependencies: ["MWBProtocol"]),
         .testTarget(name: "MWBTransportTests", dependencies: ["MWBTransport", "MWBProtocol"]),
         .testTarget(name: "MWBInputCaptureTests", dependencies: ["MWBInputCapture"]),
+        .testTarget(name: "MWBEdgeLogicTests", dependencies: ["MWBEdgeLogic"]),
     ]
 )
