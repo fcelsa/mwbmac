@@ -1,0 +1,85 @@
+# MWB Mac Host — client macOS per Mouse Without Borders
+
+Client nativo macOS (Swift, zero dipendenze esterne) che usa tastiera e mouse del Mac
+per controllare un PC Windows con PowerToys Mouse Without Borders attivo. Il Mac è
+l'host (dove nasce l'input), il PC la macchina controllata. Nulla da installare sul PC
+oltre a PowerToys.
+
+## Fonte di verità
+
+`docs/analisi.md` contiene l'analisi di fattibilità con protocollo MWB ricostruito dal
+sorgente PowerToys, architettura a quattro moduli, rischi e roadmap. Leggerla per intera
+prima di scrivere codice. In caso di dubbio sul protocollo, la verità è il sorgente
+PowerToys (`reference/MouseWithoutBorders/` se presente, altrimenti
+https://github.com/microsoft/PowerToys/tree/main/src/modules/MouseWithoutBorders).
+Implementazioni di riferimento già interoperanti: `bketelsen/mwb` (Go, macOS, direzione
+opposta) e `lucky-verma/mwb-linux` (Go, bidirezionale, clipboard).
+
+## Decisioni prese
+
+- Linguaggio: Swift. C# scartato per il prodotto (runtime .NET da distribuire, P/Invoke
+  comunque necessario). C# ammesso solo per un eventuale logger usa-e-getta su Windows
+  che linka i sorgenti MIT di PowerToys per validare i pacchetti byte per byte.
+- Struttura: Swift Package con target eseguibile, compilabile da riga di comando
+  (`swift build`, `swift test`) senza Xcode aperto. Il bundle `.app` con `Info.plist`,
+  firma, notarizzazione e barra menu arriva solo nella fase 5 della roadmap.
+- Target minimo macOS 13. Niente App Sandbox (incompatibile con il tap HID).
+- Modo mouse: relativo (delta ±100000 come marcatore), cursore locale bloccato con
+  `CGAssociateMouseAndMouseCursorPosition(false)`.
+- Crittografia con CommonCrypto (PBKDF2-HMAC-SHA512 100000 iter, AES-256-CBC streaming,
+  nessun padding: i pacchetti sono 32 o 64 byte). Rete con Network.framework.
+- Security key nel Keychain, mai in chiaro nelle preferenze.
+- Scorciatoia di emergenza per tornare al Mac: obbligatoria fin dal primo prototipo
+  (in stato remoto l'input locale è soppresso).
+- Clipboard e trasferimento file: fuori perimetro nella prima versione.
+
+## Moduli (vedi docs/analisi.md §4)
+
+1. `Protocol` — framing 32/64 byte, checksum, magic, PackageType, PBKDF2/AES, handshake
+   a sfida (`Machine1..4` → complemento bit a bit). Swift puro, testabile su qualsiasi OS.
+2. `Transport` — NWListener su porta base+1 (15101) e base (15100, opzionale);
+   NWConnection uscente verso il PC; Hello/Heartbeat ogni 5 s/Awake/ByeBye; machine pool.
+3. `InputCapture` — CGEventTap a kCGHIDEventTap; stato locale (osserva bordo) e remoto
+   (sopprime eventi, invia delta, click, rotella, tasti). Mappa keycode macOS → VK Windows.
+4. `EdgeLogic + Settings` — posizione del PC (bordo + offset), ritardo di spostamento,
+   resistenza sul bordo in pixel, hotkey di emergenza. Gestione di `MachineSwitched`,
+   `HideMouse` in uscita e `NextMachine` in ingresso (è Windows a decidere il ritorno).
+
+## Roadmap (ordine vincolante)
+
+1. Protocol + test unitari con vettori dal sorgente PowerToys (`EncryptionTests.cs`).
+2. Transport: il Mac compare nel machine pool di PowerToys e la matrice lo accetta.
+3. Input remoto unidirezionale: mouse relativo, click, rotella, poi tastiera.
+4. Cambio macchina completo con ritorno via NextMachine, ritardo e resistenza.
+5. App: NSStatusItem, impostazioni SwiftUI, Keychain, permessi TCC, firma.
+6. Verifiche di campo: multi-monitor e DPI sul PC, layout italiano Apple (⌥ per {}[]@#),
+   convivenza con Universal Control sui bordi.
+
+## Ambiente di test
+
+PC Windows con PowerToys + MWB attivo, security key nota, nome del Mac nella matrice
+nella posizione coerente con la configurazione del Mac, "Reverse DNS lookup" disattivato,
+porte 15100/15101 aperte nel firewall. Il nome del Mac deve essere risolvibile dal PC
+(mDNS `.local` o voce in `hosts`).
+
+## Stato dell'implementazione
+
+Fasi 1–4 implementate come eseguibile da riga di comando `mwbmac` (vedi `README.md`).
+Target SwiftPM: `MWBProtocol`, `MWBTransport`, `MWBInputCapture`, `MWBEdgeLogic`, `mwbmac`.
+I test usano **Swift Testing** (`import Testing`), non XCTest: sulla macchina di sviluppo
+ci sono solo i Command Line Tools, senza Xcode.
+
+Il sorgente in `reference/` è più recente di quello descritto in `docs/analisi.md`:
+dopo l'intestazione in chiaro salt+IV, il primo blocco cifrato di ogni direzione è un
+blocco casuale da scartare (`SendOrReceiveARandomDataBlockPerInitialIV`), e il ricevente
+scarta i pacchetti con `Id` già visto (coda di 50), quindi ogni pacchetto ha un Id nuovo.
+
+Mai provare la connessione al PC con una chiave sbagliata: dopo dieci pacchetti non
+validi PowerToys marca `InvalidKeyFound` e smette di aprire connessioni client.
+
+## Convenzioni
+
+- Commit piccoli, uno per passo della roadmap o sotto-passo.
+- Ogni modifica a `Protocol` deve passare `swift test`.
+- Log del protocollo in chiaro attivabile da flag, per diagnosi contro PowerToys reale.
+- Lingua dei commenti e della documentazione: italiano; identificatori in inglese.
