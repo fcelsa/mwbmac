@@ -7,6 +7,7 @@
 //
 // Il bundle .app con barra menu arriva nella fase 5 della roadmap.
 
+import AppKit
 import Darwin
 import Foundation
 import MWBEdgeLogic
@@ -237,7 +238,11 @@ case "run":
         controller.stop()
         session.stop()
     }
-    withExtendedLifetime(signals) { RunLoop.main.run() }
+    // Serve un vero ciclo di eventi AppKit: per nascondere e bloccare il cursore il
+    // processo deve poter passare in primo piano (vedi `LocalCursor`).
+    let application = NSApplication.shared
+    application.setActivationPolicy(.accessory)
+    withExtendedLifetime(signals) { application.run() }
 
 default:
     printUsage()

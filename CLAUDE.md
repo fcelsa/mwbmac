@@ -84,6 +84,15 @@ IV fissi, 50000 iterazioni). `PeerConnection` riconosce lo schema dal flusso del
 trasmette per primo, e solo dopo risponde; se il flusso non si decifra chiude senza
 inviare nulla e la sessione non riprova (`mwbmac probe --verbose` stampa la diagnosi).
 
+Cursore locale in stato remoto: sopprimere gli eventi nel tap non lo ferma, e
+`CGAssociateMouseAndMouseCursorPosition` / `CGDisplayHideCursor` valgono solo per l'app in
+primo piano. `LocalCursor.capture()` porta quindi l'app in primo piano per la durata del
+controllo remoto e `release()` lo restituisce all'app precedente (verificato sul campo).
+Non tornare al riposizionamento del cursore a ogni evento (`CGWarpMouseCursorPosition`,
+alla Synergy): è stato provato in tre varianti e falsa i delta degli eventi, rendendo il
+cursore del PC incontrollabile. Per lo stesso motivo anche `mwbmac run` gira come app
+"agente" con un ciclo di eventi AppKit.
+
 Mai provare la connessione al PC con una chiave sbagliata: dopo dieci pacchetti non
 validi PowerToys marca `InvalidKeyFound` e smette di aprire connessioni client.
 

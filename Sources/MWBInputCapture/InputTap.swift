@@ -2,6 +2,7 @@
 // osserva soltanto, in stato remoto il gestore restituisce `.suppress` e l'evento non
 // raggiunge il window server. Richiede il permesso Accessibilità (TCC).
 
+import AppKit
 import ApplicationServices
 import Carbon.HIToolbox
 import CoreGraphics
@@ -94,30 +95,84 @@ public enum InputPermissions {
     }
 }
 
-/// Stato del cursore locale durante il controllo remoto.
+/// Cursore locale durante il controllo remoto.
+///
+/// Sopprimere gli eventi nel tap non ferma il cursore: il window server lo muove comunque.
+/// Le funzioni documentate per bloccarlo e nasconderlo
+/// (`CGAssociateMouseAndMouseCursorPosition`, `CGDisplayHideCursor`) valgono solo per
+/// l'applicazione in primo piano, quindi per la durata del controllo remoto l'app si porta
+/// in primo piano (non ha finestre: a schermo non cambia nulla) e al ritorno restituisce
+/// il primo piano all'applicazione che lo aveva. È lo stesso meccanismo dei giochi in
+/// "modo relativo": cursore fermo e invisibile, delta degli eventi intatti.
+/// Riportare il cursore in un punto a ogni evento (alla Synergy) è stato provato e scartato:
+/// il riposizionamento arriva in ritardo rispetto agli eventi e ne falsa i delta.
+/// Tutto sul thread principale.
 public enum LocalCursor {
-    /// Blocca il cursore del Mac nel punto indicato. `CGAssociateMouseAndMouseCursorPosition`
-    /// da solo non basta: per un processo che non è l'app in primo piano (è sempre il caso
-    /// di un'app da barra menu) il window server continua a muovere il cursore. Il blocco
-    /// vero lo fa `pin(at:)`, richiamato a ogni movimento.
-    public static func lock(at point: CGPoint) {
-        // Senza questo, dopo ogni riposizionamento il sistema congela gli eventi per 250 ms.
-        CGEventSource(stateID: .combinedSessionState)?.localEventsSuppressionInterval = 0
-        CGAssociateMouseAndMouseCursorPosition(0)
-        CGWarpMouseCursorPosition(point)
-    }
+    private static var isCaptured = false
+    private static var isHidden = false
+    private static var previousApplication: NSRunningApplication?
+    private static var observers: [NSObjectProtocol] = []
 
-    /// Riporta il cursore nel punto di blocco se un movimento l'ha spostato. Il
-    /// riposizionamento non genera eventi e non altera i delta degli eventi successivi.
-    public static func pin(at point: CGPoint, current: CGPoint) {
-        if abs(current.x - point.x) > 0.5 || abs(current.y - point.y) > 0.5 {
-            CGWarpMouseCursorPosition(point)
+    /// Nasconde e blocca il cursore. `completion` riceve `true` se l'app è davvero passata
+    /// in primo piano (senza, il cursore resta visibile e libero, ma il controllo funziona).
+    public static func capture(completion: ((Bool) -> Void)? = nil) {
+        guard !isCaptured else { return }
+        isCaptured = true
+        let frontmost = NSWorkspace.shared.frontmostApplication
+        if frontmost?.processIdentifier != ProcessInfo.processInfo.processIdentifier {
+            previousApplication = frontmost
+        }
+        installObservers()
+        NSApplication.shared.activate(ignoringOtherApps: true)
+        apply()
+        // L'attivazione è asincrona: si riapplica quando arriva e si verifica l'esito.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+            guard isCaptured else { return }
+            apply()
+            completion?(NSApplication.shared.isActive)
         }
     }
 
-    public static func unlock(at point: CGPoint? = nil) {
-        if let point { CGWarpMouseCursorPosition(point) }
+    /// Ripristina cursore e applicazione in primo piano; `point` è dove far riapparire il cursore.
+    public static func release(at point: CGPoint? = nil) {
+        guard isCaptured else {
+            if let point { CGWarpMouseCursorPosition(point) }
+            return
+        }
+        isCaptured = false
         CGAssociateMouseAndMouseCursorPosition(1)
+        if let point { CGWarpMouseCursorPosition(point) }
+        // Dopo un riposizionamento il sistema congela il mouse per 250 ms: lo si riaggancia subito.
+        CGAssociateMouseAndMouseCursorPosition(1)
+        if isHidden {
+            CGDisplayShowCursor(CGMainDisplayID())
+            isHidden = false
+        }
+        previousApplication?.activate(options: [])
+        previousApplication = nil
+    }
+
+    private static func apply() {
+        CGAssociateMouseAndMouseCursorPosition(0)
+        if !isHidden {
+            CGDisplayHideCursor(CGMainDisplayID())
+            isHidden = true
+        }
+    }
+
+    private static func installObservers() {
+        guard observers.isEmpty else { return }
+        let center = NotificationCenter.default
+        observers.append(center.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { _ in
+            if isCaptured { apply() }
+        })
+        // Se un'altra app si prende il primo piano durante il controllo remoto, lo si riprende.
+        observers.append(center.addObserver(forName: NSApplication.didResignActiveNotification, object: nil, queue: .main) { _ in
+            guard isCaptured else { return }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                if isCaptured { NSApplication.shared.activate(ignoringOtherApps: true) }
+            }
+        })
     }
 
     public static var position: CGPoint {

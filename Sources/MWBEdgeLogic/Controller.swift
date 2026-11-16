@@ -172,7 +172,10 @@ public final class Controller {
         exitPosition = position
         enteredRemoteAt = ProcessInfo.processInfo.systemUptime
         state = .remote(machine)
-        LocalCursor.lock(at: position)
+        LocalCursor.capture { [log] captured in
+            log.debug(captured ? "cursore locale nascosto e bloccato"
+                               : "cursore locale non bloccato: l'app non è riuscita a passare in primo piano")
+        }
 
         // `PrepareToSwitchToMachine`: MachineSwitched alla nuova destinazione, poi il
         // cursore del PC viene portato nel punto d'ingresso con un movimento assoluto.
@@ -195,7 +198,7 @@ public final class Controller {
         released.keys.forEach { sendKey($0, to: machine) }
         session.send(Packet(type: .hideMouse, des: machine.id))
 
-        LocalCursor.unlock(at: point)
+        LocalCursor.release(at: point)
         detector.disarm()
         log.info("← controllo tornato al Mac (\(reason))")
         onStateChange?(state)
@@ -209,8 +212,6 @@ public final class Controller {
             let dx = Int(event.getIntegerValueField(.mouseEventDeltaX))
             let dy = Int(event.getIntegerValueField(.mouseEventDeltaY))
             if dx != 0 || dy != 0 { sendMouse(translator.mouseMove(dx: dx, dy: dy), to: machine) }
-            // Il cursore del Mac deve restare dov'era quando si è passati al PC.
-            if let exitPosition { LocalCursor.pin(at: exitPosition, current: event.location) }
         case .leftMouseDown: button(0, .down, machine)
         case .leftMouseUp: button(0, .up, machine)
         case .rightMouseDown: button(1, .down, machine)
