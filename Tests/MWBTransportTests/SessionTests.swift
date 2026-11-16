@@ -50,10 +50,15 @@ private final class Events: @unchecked Sendable {
 /// e consegna dei pacchetti di input nelle due direzioni.
 @Suite(.serialized)
 struct SessionLoopbackTests {
-    private func makePair(port: UInt16, clientKey: String = "MwbEncryptionTestKey1234") -> (server: Session, client: Session) {
-        let server = Session(configuration: .init(localName: "pc-finto", machineID: 1111,
-                                                  securityKey: "MwbEncryptionTestKey1234", remoteHost: nil,
-                                                  basePort: port - 1, listenPort: port))
+    /// Il server usa uno schema fisso e trasmette per primo, come PowerToys; il client
+    /// lo riconosce dal flusso.
+    private func makePair(port: UInt16, clientKey: String = "MwbEncryptionTestKey1234",
+                          serverScheme: CipherScheme = .current) -> (server: Session, client: Session) {
+        var serverConfiguration = Session.Configuration(localName: "pc-finto", machineID: 1111,
+                                                        securityKey: "MwbEncryptionTestKey1234", remoteHost: nil,
+                                                        basePort: port - 1, listenPort: port)
+        serverConfiguration.cipherScheme = serverScheme
+        let server = Session(configuration: serverConfiguration)
         let client = Session(configuration: .init(localName: "mac-finto", machineID: 2222,
                                                   securityKey: clientKey, remoteHost: "127.0.0.1",
                                                   basePort: port - 1, listenPort: nil,
@@ -114,6 +119,22 @@ struct SessionLoopbackTests {
         server.stop()
     }
 
+    @Test func legacySchemeIsDetected() async {
+        let (server, client) = makePair(port: 25107, serverScheme: .legacy)
+        let events = Events()
+        client.onMachineConnected = { machine in
+            events.record("client")
+            client.send(Packet(type: .machineSwitched, des: machine.id))
+        }
+        server.onMachineConnected = { _ in events.record("server") }
+        server.onPacket = { if $0.type == .machineSwitched { events.record("switched") } }
+        server.start()
+        client.start()
+        #expect(await events.wait(for: ["client", "server", "switched"], timeout: 10), "eventi arrivati: \(events.all)")
+        client.stop()
+        server.stop()
+    }
+
     @Test func byeByeAndDisconnectAreReported() async {
         let (server, client) = makePair(port: 25103)
         let events = Events()
@@ -137,9 +158,14 @@ struct SessionLoopbackTests {
         let events = Events()
         server.onMachineConnected = { _ in events.record("trusted") }
         client.onMachineConnected = { _ in events.record("trusted") }
+        client.onInvalidKey = { events.record("invalid-key") }
         server.start()
         client.start()
-        #expect(await events.wait(for: ["trusted"], timeout: 2.5) == false)
+        #expect(await events.wait(for: ["invalid-key"], timeout: 5))
+        // Dopo il primo flusso illeggibile il client non deve riprovare.
+        try? await Task.sleep(nanoseconds: 2_000_000_000)
+        #expect(events.all.filter { $0 == "invalid-key" }.count == 1)
+        #expect(!events.all.contains("trusted"))
         #expect(client.connectedMachines.isEmpty)
         client.stop()
         server.stop()

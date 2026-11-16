@@ -63,6 +63,13 @@ struct CryptoTests {
         #expect(decrypted == plain)
     }
 
+    /// Schema storico: salt fisso "18446744073709551615" in UTF-16LE, 50000 iterazioni.
+    @Test func testLegacyKeyAndIV() throws {
+        let key = try KeyDerivation.legacyKey(securityKey: Self.testKey)
+        #expect(hex(key) == "49d5cef88a62dabd3076c13d3b483cf4f6893b2cbf089beefda7542671d70b0d")
+        #expect(String(decoding: KeyDerivation.legacyIV, as: UTF8.self) == "1844674407370955")
+    }
+
     @Test func testDifferentSaltGivesDifferentKey() throws {
         let a = try KeyDerivation.deriveKey(securityKey: Self.testKey, salt: Self.salt, iterations: 10)
         let b = try KeyDerivation.deriveKey(securityKey: Self.testKey, salt: Self.iv, iterations: 10)

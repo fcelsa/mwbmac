@@ -21,6 +21,8 @@ public final class Session: @unchecked Sendable {
         public var listenPort: UInt16?
         public var heartbeatInterval: TimeInterval
         public var reconnectInterval: TimeInterval
+        /// Schema di cifratura; `.auto` lo riconosce dal flusso del PC.
+        public var cipherScheme: CipherScheme = .auto
 
         public init(localName: String, machineID: UInt32, securityKey: String, remoteHost: String?,
                     basePort: UInt16 = 15100, listenPort: UInt16? = 15101,
@@ -45,6 +47,8 @@ public final class Session: @unchecked Sendable {
     public var onMachineConnected: ((Machine) -> Void)?
     public var onMachineDisconnected: ((Machine) -> Void)?
     public var onPacket: ((Packet) -> Void)?
+    /// La security key non coincide con quella del PC; la sessione smette di riprovare.
+    public var onInvalidKey: (() -> Void)?
 
     public let log: Log
     private let configuration: Configuration
@@ -60,7 +64,9 @@ public final class Session: @unchecked Sendable {
     private var running = false
     private var lastHeartbeat = Date.distantPast
     private var lastConnectAttempt = Date.distantPast
-    private var reportedInvalidKey = false
+    /// Dopo un flusso illeggibile non si riprova: una raffica di tentativi con la
+    /// chiave sbagliata fa scattare le protezioni di PowerToys (`InvalidKeyFound`).
+    private var invalidKeyLatched = false
 
     private let stateLock = NSLock()
     private var connectedSnapshot: [Machine] = []
@@ -73,6 +79,8 @@ public final class Session: @unchecked Sendable {
                                               magic: KeyDerivation.magicNumber(securityKey: key),
                                               localName: configuration.localName,
                                               localID: configuration.machineID,
+                                              scheme: configuration.cipherScheme,
+                                              legacyKey: (try? KeyDerivation.legacyKey(securityKey: key)) ?? [],
                                               log: log)
     }
 
@@ -168,7 +176,7 @@ public final class Session: @unchecked Sendable {
     }
 
     private func connectIfNeeded() {
-        guard running, let host = configuration.remoteHost, !host.isEmpty else { return }
+        guard running, !invalidKeyLatched, let host = configuration.remoteHost, !host.isEmpty else { return }
         guard !peers.contains(where: { $0.isOutgoing && !$0.isClosed }) else { return }
         guard Date().timeIntervalSince(lastConnectAttempt) >= configuration.reconnectInterval else { return }
         guard let port = NWEndpoint.Port(rawValue: configuration.basePort + 1) else { return }
@@ -203,7 +211,6 @@ public final class Session: @unchecked Sendable {
             peer.close(.local)
             return
         }
-        reportedInvalidKey = false
         let machine = Machine(id: peer.remoteID, name: peer.remoteName)
         let isNew = pool[machine.id] == nil
         pool[machine.id] = machine
@@ -219,9 +226,12 @@ public final class Session: @unchecked Sendable {
 
     private func peerClosed(_ peer: PeerConnection, _ reason: PeerConnection.CloseReason) {
         peers.removeAll { $0 === peer }
-        if case .invalidKey = reason, !reportedInvalidKey {
-            reportedInvalidKey = true
-            log.info("\(peer.label): \(reason)")
+        if case .invalidKey = reason {
+            if !invalidKeyLatched {
+                log.info("\(peer.label): \(reason). Non riprovo: correggere la chiave con `mwbmac set-key` e rilanciare.")
+            }
+            invalidKeyLatched = true
+            onInvalidKey?()
         } else {
             log.debug("\(peer.label): \(reason)")
         }

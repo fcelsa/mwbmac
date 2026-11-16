@@ -190,8 +190,13 @@ case "config":
     let settings = loadSettings(applying: options)
     print("Preferenze: \(Settings.defaultURL.path)")
     if let text = try? String(contentsOf: Settings.defaultURL, encoding: .utf8) { print(text) }
-    let hasKey = ((try? KeychainStore.readSecurityKey()) ?? nil) != nil
-    print("Security key nel Keychain: \(hasKey ? "presente" : "assente")")
+    // Solo la forma della chiave, mai il valore: le chiavi generate da MWB hanno 16 caratteri.
+    if let key = (try? KeychainStore.readSecurityKey()) ?? nil {
+        let ascii = key.unicodeScalars.allSatisfy { $0.isASCII && $0.value > 0x20 && $0.value < 0x7F }
+        print("Security key nel Keychain: presente, \(key.count) caratteri\(ascii ? "" : ", contiene caratteri non ASCII o di controllo")")
+    } else {
+        print("Security key nel Keychain: assente")
+    }
     print("Scorciatoia di emergenza: \(settings.hotkey.description)")
 
 case "probe":

@@ -60,6 +60,22 @@ public enum KeyDerivation {
         return (UInt32(hash[0]) << 23) &+ (UInt32(hash[1]) << 16) &+ (UInt32(hash[63]) << 8) &+ UInt32(hash[2])
     }
 
+    // MARK: Schema storico (PowerToys precedenti all'intestazione salt+IV per connessione)
+
+    /// `InitialIV = ulong.MaxValue.ToString()` nelle vecchie versioni di `Encryption.cs`.
+    static let legacyInitialIV = "18446744073709551615"
+    public static let legacyIterations: UInt32 = 50_000
+
+    /// Chiave dello schema storico: PBKDF2-HMAC-SHA512, 50000 iterazioni, salt fisso
+    /// (`InitialIV` in UTF-16LE). Nessuna intestazione in chiaro sul filo.
+    public static func legacyKey(securityKey: String) throws -> [UInt8] {
+        let salt = legacyInitialIV.utf16.flatMap { [UInt8($0 & 0xFF), UInt8($0 >> 8)] }
+        return try deriveKey(securityKey: securityKey, salt: salt, iterations: legacyIterations)
+    }
+
+    /// IV fisso dello schema storico: i primi 16 caratteri ASCII di `InitialIV`.
+    public static var legacyIV: [UInt8] { Array(legacyInitialIV.utf8.prefix(blockSize)) }
+
     static func sha512(_ input: [UInt8]) -> [UInt8] {
         var digest = [UInt8](repeating: 0, count: Int(CC_SHA512_DIGEST_LENGTH))
         _ = CC_SHA512(input, CC_LONG(input.count), &digest)

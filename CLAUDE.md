@@ -74,6 +74,11 @@ dopo l'intestazione in chiaro salt+IV, il primo blocco cifrato di ogni direzione
 blocco casuale da scartare (`SendOrReceiveARandomDataBlockPerInitialIV`), e il ricevente
 scarta i pacchetti con `Id` già visto (coda di 50), quindi ogni pacchetto ha un Id nuovo.
 
+Le versioni di PowerToys precedenti usano lo schema storico (nessuna intestazione, salt e
+IV fissi, 50000 iterazioni). `PeerConnection` riconosce lo schema dal flusso del PC, che
+trasmette per primo, e solo dopo risponde; se il flusso non si decifra chiude senza
+inviare nulla e la sessione non riprova (`mwbmac probe --verbose` stampa la diagnosi).
+
 Mai provare la connessione al PC con una chiave sbagliata: dopo dieci pacchetti non
 validi PowerToys marca `InvalidKeyFound` e smette di aprire connessioni client.
 

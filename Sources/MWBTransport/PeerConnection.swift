@@ -1,13 +1,29 @@
 // Una connessione TCP cifrata verso (o da) un'altra macchina MWB.
 // Fonte: PowerToys `SocketStuff.MainTCPRoutine`, `TcpSk`, `TcpReceiveData`.
 //
-// Sequenza per ciascuna direzione: 32 byte in chiaro (salt + IV), poi flusso AES con
-// un primo blocco casuale da scartare, 10 pacchetti Handshake, quindi il traffico.
+// Due schemi di cifratura, secondo la versione di PowerToys installata sul PC:
+//   - corrente: 32 byte in chiaro (salt + IV) all'inizio di ogni direzione, chiave
+//     PBKDF2 a 100000 iterazioni su quel salt;
+//   - storico: nessuna intestazione, salt e IV fissi, 50000 iterazioni.
+// In entrambi il primo blocco cifrato è casuale e va scartato; seguono 10 pacchetti
+// Handshake e poi il traffico. PowerToys trasmette per primo appena la connessione è
+// aperta, quindi in modalità automatica si aspetta il suo flusso, si riconosce lo
+// schema e solo allora si risponde: così al PC non arriva mai un flusso illeggibile.
 // Tutti i metodi vanno chiamati sulla coda seriale della sessione.
 
 import Foundation
 import MWBProtocol
 import Network
+
+/// Schema di cifratura del flusso.
+public enum CipherScheme: String, Sendable {
+    /// Riconosce lo schema dal flusso del peer.
+    case auto
+    /// Intestazione salt+IV per connessione (PowerToys recenti).
+    case current
+    /// Salt e IV fissi (PowerToys meno recenti).
+    case legacy
+}
 
 final class PeerConnection {
     struct Context {
@@ -15,6 +31,8 @@ final class PeerConnection {
         let magic: UInt32
         let localName: String
         let localID: UInt32
+        let scheme: CipherScheme
+        let legacyKey: [UInt8]
         let log: Log
     }
 
@@ -26,7 +44,7 @@ final class PeerConnection {
         var description: String {
             switch self {
             case .network(let detail): return detail
-            case .invalidKey: return "pacchetti non validi: la security key non coincide con quella del PC?"
+            case .invalidKey: return "flusso illeggibile: la security key non coincide con quella del PC"
             case .local: return "chiusa localmente"
             }
         }
@@ -47,7 +65,15 @@ final class PeerConnection {
     private(set) var isTrusted = false
     private(set) var isClosed = false
     private(set) var isReady = false
+    /// Schema effettivamente in uso, noto dopo il riconoscimento.
+    private(set) var activeScheme: CipherScheme?
     let createdAt = Date()
+
+    /// Byte del peer necessari a riconoscere lo schema: intestazione (32) + blocco
+    /// casuale (16) + primi 32 byte di un pacchetto.
+    static let detectionSize = KeyDerivation.headerSize + KeyDerivation.blockSize + Packet.size
+    /// Se il peer resta muto (non è PowerToys) si parte con lo schema corrente.
+    static let detectionTimeout: TimeInterval = 1.5
 
     private var encryptor: CipherStream?
     private var decryptor: CipherStream?
@@ -113,21 +139,41 @@ final class PeerConnection {
     private func didBecomeReady() {
         guard !isReady, !isClosed else { return }
         isReady = true
+        if context.scheme == .auto {
+            queue.asyncAfter(deadline: .now() + PeerConnection.detectionTimeout) { [weak self] in
+                guard let self, !self.isClosed, self.activeScheme == nil else { return }
+                self.context.log.debug("\(self.label): il peer non trasmette, parto con lo schema corrente")
+                self.adopt(scheme: .current)
+            }
+        } else {
+            adopt(scheme: context.scheme)
+        }
+        receive()
+    }
+
+    /// Fissa lo schema e apre la nostra direzione: (intestazione), blocco casuale, sfida.
+    private func adopt(scheme: CipherScheme) {
+        guard activeScheme == nil, !isClosed else { return }
+        activeScheme = scheme
+        context.log.debug("\(label): schema di cifratura \(scheme.rawValue)")
         do {
-            // Intestazione in chiaro: salt e IV freschi per questa direzione.
-            let header = KeyDerivation.randomBytes(KeyDerivation.headerSize)
-            let key = try KeyDerivation.deriveKey(securityKey: context.securityKey,
-                                                  salt: Array(header[0..<KeyDerivation.saltSize]))
-            let stream = try CipherStream(key: key, iv: Array(header[KeyDerivation.saltSize...]), direction: .encrypt)
+            let stream: CipherStream
+            if scheme == .legacy {
+                stream = try CipherStream(key: context.legacyKey, iv: KeyDerivation.legacyIV, direction: .encrypt)
+            } else {
+                // Intestazione in chiaro: salt e IV freschi per questa direzione.
+                let header = KeyDerivation.randomBytes(KeyDerivation.headerSize)
+                let key = try KeyDerivation.deriveKey(securityKey: context.securityKey,
+                                                      salt: Array(header[0..<KeyDerivation.saltSize]))
+                stream = try CipherStream(key: key, iv: Array(header[KeyDerivation.saltSize...]), direction: .encrypt)
+                sendRaw(header)
+            }
             encryptor = stream
-            sendRaw(header)
             sendRaw(try stream.process(KeyDerivation.randomBytes(KeyDerivation.blockSize)))
             for _ in 0..<Handshake.repeatCount { send(challenge) }
         } catch {
             close(.network("inizializzazione della cifratura fallita: \(error)"))
-            return
         }
-        receive()
     }
 
     private func sendRaw(_ bytes: [UInt8]) {
@@ -155,15 +201,56 @@ final class PeerConnection {
         }
     }
 
+    /// Riconosce lo schema dai primi byte del peer: quello giusto è l'unico che, tolto
+    /// il blocco casuale, produce un pacchetto con magic e checksum validi.
+    private func detectScheme() throws -> CipherScheme? {
+        let legacy = try CipherStream(key: context.legacyKey, iv: KeyDerivation.legacyIV, direction: .decrypt)
+        let legacyPlain = try legacy.process(Array(cipherBuffer[0..<(KeyDerivation.blockSize + Packet.size)]))
+        if (try? Packet.validate(header: Array(legacyPlain[KeyDerivation.blockSize...]), magic: context.magic)) != nil {
+            return .legacy
+        }
+        let key = try KeyDerivation.deriveKey(securityKey: context.securityKey,
+                                              salt: Array(cipherBuffer[0..<KeyDerivation.saltSize]))
+        let iv = Array(cipherBuffer[KeyDerivation.saltSize..<KeyDerivation.headerSize])
+        let current = try CipherStream(key: key, iv: iv, direction: .decrypt)
+        let currentPlain = try current.process(Array(cipherBuffer[KeyDerivation.headerSize..<PeerConnection.detectionSize]))
+        if (try? Packet.validate(header: Array(currentPlain[KeyDerivation.blockSize...]), magic: context.magic)) != nil {
+            return .current
+        }
+        // Diagnosi: con la decifratura giusta e il solo magic sbagliato il tipo sarebbe 126.
+        let expected = [UInt8((context.magic >> 16) & 0xFF), UInt8((context.magic >> 24) & 0xFF)]
+        func summary(_ plain: [UInt8]) -> String {
+            let p = Array(plain[KeyDerivation.blockSize...])
+            return "tipo=\(p[0]) magic=\(p[2]),\(p[3]) (atteso \(expected[0]),\(expected[1]))"
+        }
+        context.log.debug("\(label): ricevuti \(cipherBuffer.count) byte; storico: \(summary(legacyPlain)); corrente: \(summary(currentPlain))")
+        return nil
+    }
+
     private func drain() {
         do {
             if decryptor == nil {
-                guard cipherBuffer.count >= KeyDerivation.headerSize else { return }
-                let key = try KeyDerivation.deriveKey(securityKey: context.securityKey,
-                                                      salt: Array(cipherBuffer[0..<KeyDerivation.saltSize]))
-                let iv = Array(cipherBuffer[KeyDerivation.saltSize..<KeyDerivation.headerSize])
-                decryptor = try CipherStream(key: key, iv: iv, direction: .decrypt)
-                cipherBuffer.removeFirst(KeyDerivation.headerSize)
+                var scheme = activeScheme
+                if scheme == nil {
+                    guard cipherBuffer.count >= PeerConnection.detectionSize else { return }
+                    guard let detected = try detectScheme() else {
+                        // Niente è stato inviato al peer: chiusura pulita, senza rumore.
+                        close(.invalidKey)
+                        return
+                    }
+                    adopt(scheme: detected)
+                    scheme = detected
+                }
+                if scheme == .legacy {
+                    decryptor = try CipherStream(key: context.legacyKey, iv: KeyDerivation.legacyIV, direction: .decrypt)
+                } else {
+                    guard cipherBuffer.count >= KeyDerivation.headerSize else { return }
+                    let key = try KeyDerivation.deriveKey(securityKey: context.securityKey,
+                                                          salt: Array(cipherBuffer[0..<KeyDerivation.saltSize]))
+                    let iv = Array(cipherBuffer[KeyDerivation.saltSize..<KeyDerivation.headerSize])
+                    decryptor = try CipherStream(key: key, iv: iv, direction: .decrypt)
+                    cipherBuffer.removeFirst(KeyDerivation.headerSize)
+                }
             }
             if !cipherBuffer.isEmpty, let decryptor {
                 plainBuffer.append(contentsOf: try decryptor.process(cipherBuffer))
