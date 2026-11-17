@@ -35,8 +35,11 @@ IDENTITY="${MWB_SIGN_IDENTITY:-mwbmac local signing}"
 APP="build/$APP_NAME.app"
 
 echo "==> Compilazione ($CONFIGURATION)"
-swift build -c "$CONFIGURATION" --product "$EXECUTABLE"
-swift build -c "$CONFIGURATION" --product mwbmac
+# Una sola compilazione per app e riga di comando. Con i soli Command Line Tools il linker
+# segnala percorsi di ricerca di Xcode che non esistono ("search path ... not found"):
+# sono avvisi innocui e vengono tolti dall'output; gli errori veri restano visibili e,
+# grazie a pipefail, fermano lo script.
+swift build -c "$CONFIGURATION" 2>&1 | { grep -v "ld: warning: search path .* not found" || true; }
 BIN_DIR="$(swift build -c "$CONFIGURATION" --show-bin-path)"
 
 echo "==> Bundle $APP"
@@ -80,8 +83,9 @@ else
     echo "    firma ad hoc (nessuna identità \"$IDENTITY\": vedi scripts/create-signing-cert.sh)"
 fi
 # Prima l'eseguibile annidato, poi il bundle.
-codesign --force --sign "$SIGN_AS" --identifier "$BUNDLE_ID.cli" "$APP/Contents/MacOS/mwbmac"
-codesign --force --sign "$SIGN_AS" --identifier "$BUNDLE_ID" "$APP"
+# "replacing existing signature" è normale: il linker firma già ad hoc ogni eseguibile.
+codesign --force --sign "$SIGN_AS" --identifier "$BUNDLE_ID.cli" "$APP/Contents/MacOS/mwbmac" 2>&1 | { grep -v "replacing existing signature" || true; }
+codesign --force --sign "$SIGN_AS" --identifier "$BUNDLE_ID" "$APP" 2>&1 | { grep -v "replacing existing signature" || true; }
 codesign --verify --strict --verbose=1 "$APP"
 
 if $INSTALL; then
