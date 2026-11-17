@@ -117,10 +117,14 @@ byte con 48 byte di dati agli offset 16..63, poi `ClipboardDataEnd`); oltre, pac
   connessione lasciandola aperta, senza alcun errore visibile dal Mac.
 
 Blocco schermo (`LockSync`): sul filo non c'è un pacchetto "blocca". Per bloccare il PC si
-inviano a ALL i tasti VK_LCONTROL, VK_LMENU, lettera (giù e su): `InputProcessKeyEx` del PC
-li riconosce e chiama `LockWorkStation`. Il PC che preme due volte la scorciatoia invia
-invece VK_MENU, VK_CONTROL, lettera (codici generici) a ALL. Il Mac si blocca con un ⌃⌘Q
-sintetico marcato in `eventSourceUserData`, che il tap lascia passare.
+inviano a ALL i tasti della scorciatoia "blocca tutte le macchine" del PC (giù e su, codici
+sinistri VK_LWIN, VK_LCONTROL, VK_LMENU, VK_LSHIFT): `InputProcessKeyEx` del PC la riconosce
+con `HotkeyMatched` (modificatori richiesti premuti, altri tollerati) e chiama
+`LockWorkStation`. La predefinita di PowerToys è Win+Ctrl+Alt+L, non Ctrl+Alt+L come dice la
+vecchia documentazione MWB: con Ctrl+Alt+L il PC non si blocca (verificato sul campo). Il PC
+che preme due volte la scorciatoia invia invece VK_MENU, VK_SHIFT, VK_LWIN, VK_CONTROL, tasto
+a ALL. Il Mac si blocca con un ⌃⌘Q sintetico marcato in `eventSourceUserData`, che il tap
+lascia passare.
 
 Mai provare la connessione al PC con una chiave sbagliata: dopo dieci pacchetti non
 validi PowerToys marca `InvalidKeyFound` e smette di aprire connessioni client.

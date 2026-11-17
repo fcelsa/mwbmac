@@ -72,9 +72,9 @@ public struct Settings: Codable, Equatable, Sendable {
     /// Blocco schermo sincronizzato: ⌃⌘Q sul Mac blocca anche il PC, e la scorciatoia
     /// "blocca tutte le macchine" del PC blocca anche il Mac.
     public var syncLock: Bool
-    /// Lettera della scorciatoia Ctrl+Alt+lettera "blocca tutte le macchine"; deve essere
-    /// la stessa impostata nel Mouse Without Borders del PC.
-    public var lockAllLetter: String
+    /// Scorciatoia "blocca tutte le macchine" nella forma "Win+Ctrl+Alt+L"; deve essere la
+    /// stessa impostata nel Mouse Without Borders del PC (predefinita di PowerToys).
+    public var lockAllShortcut: String
 
     public init() {
         remoteHost = ""
@@ -95,7 +95,7 @@ public struct Settings: Codable, Equatable, Sendable {
         hotkey = Hotkey()
         shareClipboard = true
         syncLock = true
-        lockAllLetter = "L"
+        lockAllShortcut = LockShortcut.powerToysDefault.description
     }
 
     /// Le chiavi assenti nel file prendono il valore predefinito, così le versioni
@@ -122,7 +122,7 @@ public struct Settings: Codable, Equatable, Sendable {
         hotkey = try c.decodeIfPresent(Hotkey.self, forKey: .hotkey) ?? hotkey
         shareClipboard = try c.decodeIfPresent(Bool.self, forKey: .shareClipboard) ?? shareClipboard
         syncLock = try c.decodeIfPresent(Bool.self, forKey: .syncLock) ?? syncLock
-        lockAllLetter = try c.decodeIfPresent(String.self, forKey: .lockAllLetter) ?? lockAllLetter
+        lockAllShortcut = try c.decodeIfPresent(String.self, forKey: .lockAllShortcut) ?? lockAllShortcut
     }
 
     public var activeRange: ClosedRange<Double> {

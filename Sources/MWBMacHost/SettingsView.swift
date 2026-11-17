@@ -76,9 +76,9 @@ struct SettingsView: View {
             }
             Section("Blocco schermo") {
                 Toggle("Blocca insieme Mac e PC", isOn: $state.settings.syncLock)
-                TextField("Lettera di \"blocca tutte le macchine\" (Ctrl+Alt+…)", text: $state.settings.lockAllLetter)
+                TextField("Scorciatoia \"blocca tutte le macchine\" del PC", text: $state.settings.lockAllShortcut)
                     .disabled(!state.settings.syncLock)
-                Text("⌃⌘Q sul Mac blocca anche il PC; Win+L inviato al PC o Ctrl+Alt+lettera premuto due volte sul PC bloccano anche il Mac. La lettera deve essere quella impostata in Mouse Without Borders sul PC.")
+                Text("⌃⌘Q sul Mac blocca anche il PC; Win+L inviato al PC o la scorciatoia premuta due volte sul PC bloccano anche il Mac. Deve essere quella impostata in PowerToys → Mouse Without Borders sul PC, nella forma Win+Ctrl+Alt+L.")
                     .font(.caption).foregroundStyle(.secondary)
             }
             if model.status == .missingPermissions {
@@ -207,12 +207,11 @@ struct SettingsView: View {
         state.settings.basePort = port
         state.settings.remoteHost = state.settings.remoteHost.trimmingCharacters(in: .whitespaces)
         state.settings.localName = String(state.settings.localName.trimmingCharacters(in: .whitespaces).prefix(32))
-        let letter = state.settings.lockAllLetter.trimmingCharacters(in: .whitespaces)
-        guard letter.count == 1, let first = letter.first, first.isASCII, first.isLetter else {
-            show("La lettera di blocco deve essere una sola lettera A–Z", error: true)
+        guard let lockShortcut = LockShortcut(parsing: state.settings.lockAllShortcut) else {
+            show("Scorciatoia di blocco non valida: modificatori (Win, Ctrl, Alt, Shift) e un tasto A–Z o 0–9, per esempio Win+Ctrl+Alt+L", error: true)
             return
         }
-        state.settings.lockAllLetter = letter.uppercased()
+        state.settings.lockAllShortcut = lockShortcut.description
         guard !state.settings.localName.isEmpty else {
             show("Il nome del Mac non può essere vuoto", error: true)
             return

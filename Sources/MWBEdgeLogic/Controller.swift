@@ -54,7 +54,7 @@ public final class Controller {
         self.detector = settings.makeEdgeDetector()
         self.translator = InputTranslator(keyMap: settings.makeKeyMap(isISOKeyboard: PhysicalKeyboard.isISO),
                                           invertScroll: settings.invertScroll)
-        self.lockSync = LockSync(letter: settings.lockAllLetter)
+        self.lockSync = LockSync(shortcut: settings.lockAllShortcut)
     }
 
     /// Da chiamare sul thread principale.
@@ -122,7 +122,7 @@ public final class Controller {
             if type == .mouseMoved { observeEdge(event) }
             return .pass
         case .remote(let machine):
-            // Win+L (o Ctrl+Alt+lettera) inviato al PC lo blocca: si blocca anche il Mac,
+            // Win+L (o la scorciatoia "blocca tutte le macchine") inviato al PC lo blocca: si blocca anche il Mac,
             // come succede con un PC Windows al posto del Mac, dove Win+L non si intercetta.
             let locksPC = settings.syncLock && isFreshKeyDown && pcWillLock(event)
             forward(type: type, event: event, to: machine)
@@ -324,7 +324,7 @@ public final class Controller {
                 packet.keyboard = keyboard
                 session.send(packet)
             }
-            log.info("Blocco schermo: scorciatoia Ctrl+Alt+\(lockSync.letter) inviata alle altre macchine")
+            log.info("Blocco schermo: scorciatoia \(lockSync.shortcut) inviata alle altre macchine")
         }
         if fromRemote {
             returnToLocal(reason: "blocco schermo", at: exitPosition)

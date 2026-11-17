@@ -60,17 +60,20 @@ Diagnosi dell'app: `~/Library/Logs/mwbmac/mwbmac.log`; i messaggi dettagliati si
 ## Blocco schermo sincronizzato
 
 Si basa sulla funzione documentata di Mouse Without Borders "Shortcut to lock all
-machines" (Ctrl+Alt+lettera premuta due volte, valida fra macchine con la stessa lettera):
+machines": la scorciatoia premuta due volte blocca tutte le macchine con la stessa
+impostazione. In PowerToys è configurabile e la predefinita è **Win+Ctrl+Alt+L** (la
+vecchia documentazione del Mouse Without Borders originale parla di Ctrl+Alt+lettera).
 
 - **⌃⌘Q sul Mac** blocca il Mac e invia al PC la scorciatoia "blocca tutte le macchine";
 - **Win+L inviato al PC** mentre lo controlli (⌃L con la mappatura predefinita) blocca il
   PC e anche il Mac, come succede con un PC Windows al posto del Mac;
-- **Ctrl+Alt+lettera premuta due volte sul PC** blocca il PC e anche il Mac.
+- **la scorciatoia premuta due volte sul PC** blocca il PC e anche il Mac.
 
 Non si sincronizza ciò che Mouse Without Borders non trasmette: Win+L premuto sulla
 tastiera del PC, e il blocco del Mac dal menu Apple, da Touch ID, dagli angoli attivi o
-dallo stop. Le preferenze `syncLock` e `lockAllLetter` (predefinite `true` e `L`) la
-regolano; la lettera deve coincidere con quella impostata nel Mouse Without Borders del PC.
+dallo stop. Le preferenze `syncLock` e `lockAllShortcut` (predefinite `true` e `Win+Ctrl+Alt+L`) la
+regolano; la scorciatoia deve coincidere con quella impostata nel Mouse Without Borders
+del PC.
 
 ## Compilazione e test
 
@@ -145,7 +148,7 @@ manualmente al PC). In stato remoto l'input locale è soppresso: tenerla a mente
 | `hotkey` | scorciatoia di emergenza (keycode macOS + modificatori) | ⌃⌥⌘Esc |
 | `shareClipboard` | appunti condivisi, testo e immagini | `true` |
 | `syncLock` | blocco schermo sincronizzato fra Mac e PC | `true` |
-| `lockAllLetter` | lettera di Ctrl+Alt+lettera "blocca tutte le macchine", uguale al PC | `L` |
+| `lockAllShortcut` | scorciatoia "blocca tutte le macchine", uguale al PC | `Win+Ctrl+Alt+L` |
 
 ## Struttura
 

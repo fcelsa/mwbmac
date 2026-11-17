@@ -230,70 +230,77 @@ struct SettingsTests {
 }
 
 struct LockSyncTests {
-    @Test func sequenceMatchesWhatPowerToysRecognizes() {
-        let sequence = LockSync(letter: "L").lockAllSequence()
-        // Ctrl, Alt, L giù; poi su in ordine inverso. Codici sinistri: `InputProcessKeyEx`
-        // traccia VK_LCONTROL/VK_RCONTROL e VK_LMENU/VK_RMENU.
-        #expect(sequence.map(\.vk) == [0xA2, 0xA4, 0x4C, 0x4C, 0xA4, 0xA2])
-        #expect(sequence.map(\.flags) == [0, 0, 0, 0x80, 0x80, 0x80])
+    @Test func defaultSequenceMatchesPowerToysDefault() {
+        let sequence = LockSync(shortcut: "Win+Ctrl+Alt+L").lockAllSequence()
+        // Win, Ctrl, Alt, L giù; poi su in ordine inverso. Codici sinistri: `InputProcessKeyEx`
+        // traccia VK_LWIN/VK_RWIN, VK_LCONTROL/VK_RCONTROL e VK_LMENU/VK_RMENU.
+        #expect(sequence.map(\.vk) == [0x5B, 0xA2, 0xA4, 0x4C, 0x4C, 0xA4, 0xA2, 0x5B])
+        #expect(sequence.map(\.flags) == [0x01, 0, 0, 0, 0x80, 0x80, 0x80, 0x81])
+        #expect(LockSync(shortcut: "Ctrl+Alt+K").lockAllSequence().map(\.vk) == [0xA2, 0xA4, 0x4B, 0x4B, 0xA4, 0xA2])
     }
 
-    @Test func letterIsValidatedAndUppercased() {
-        #expect(LockSync(letter: "k").letter == "K")
-        #expect(LockSync(letter: "k").letterVK == 0x4B)
-        for invalid in ["", "LL", "1", "é", "ß", " ", "€"] {
-            #expect(LockSync(letter: invalid).letter == "L", "\(invalid)")
+    @Test func shortcutIsParsedAndNormalized() {
+        #expect(LockShortcut(parsing: " win + CTRL+alt+l ")?.description == "Win+Ctrl+Alt+L")
+        #expect(LockShortcut(parsing: "Shift+Control+7")?.description == "Ctrl+Shift+7")
+        #expect(LockShortcut(parsing: "Ctrl+Alt+k")?.keyVK == 0x4B)
+        for invalid in ["", "L", "Ctrl+", "Ctrl+LL", "Ctrl+é", "Ctrl+ß", "Cmd+L", "Ctrl+Alt+€", "+L"] {
+            #expect(LockShortcut(parsing: invalid) == nil, "\(invalid)")
         }
-        #expect(LockSync(letter: " m ").letter == "M")
+        #expect(LockSync(shortcut: "boh").shortcut == .powerToysDefault)
+        #expect(Settings().lockAllShortcut == "Win+Ctrl+Alt+L")
     }
 
     @Test func detectsOutgoingLockCombos() {
-        let sync = LockSync(letter: "K")
+        let sync = LockSync(shortcut: "Ctrl+Alt+K")
         let win = [WindowsKey(VK.lWin, extended: true)]
         let ctrlAlt = [WindowsKey(VK.lControl), WindowsKey(VK.lMenu)]
-        // Win+L blocca sempre il PC, qualunque sia la lettera impostata.
+        // Win+L blocca sempre il PC, qualunque sia la scorciatoia impostata.
         #expect(sync.locksPC(sending: 0x4C, pressed: win))
         #expect(sync.locksPC(sending: 0x4B, pressed: ctrlAlt))
+        // Modificatori in più non impediscono il blocco (`HotkeyMatched`).
+        #expect(sync.locksPC(sending: 0x4B, pressed: ctrlAlt + [WindowsKey(VK.lShift)]))
         #expect(!sync.locksPC(sending: 0x4C, pressed: ctrlAlt))
         #expect(!sync.locksPC(sending: 0x4B, pressed: [WindowsKey(VK.lControl)]))
         #expect(!sync.locksPC(sending: 0x4C, pressed: []))
         #expect(!sync.locksPC(sending: 0x4B, pressed: win))
+
+        let standard = LockSync(shortcut: "Win+Ctrl+Alt+L")
+        #expect(!standard.locksPC(sending: 0x4B, pressed: win + ctrlAlt))
     }
 
-    /// Ciò che invia il PC quando si preme due volte la scorciatoia (`InputHook.ProcessHotKeys`):
-    /// VK_MENU, VK_CONTROL e la lettera giù, poi gli stessi su.
+    /// Ciò che invia il PC quando si preme due volte la scorciatoia (`InputHook.ProcessHotKeys`
+    /// con `GetVkCodesList`): VK_MENU, VK_LWIN, VK_CONTROL e il tasto giù, poi gli stessi su.
     @Test func recognizesTheSequenceSentByPowerToys() {
-        var sync = LockSync(letter: "L")
-        let down: [Int32] = [0x12, 0x11, 0x4C]
+        var sync = LockSync(shortcut: "Win+Ctrl+Alt+L")
+        let down: [Int32] = [0x12, 0x5B, 0x11, 0x4C]
         var fired: [Bool] = []
         for vk in down { fired.append(sync.observeIncoming(vk: vk, flags: 0, now: 10)) }
         for vk in down { fired.append(sync.observeIncoming(vk: vk, flags: 0x80, now: 10)) }
-        #expect(fired == [false, false, true, false, false, false])
+        #expect(fired == [false, false, false, true, false, false, false, false])
         // Ripetuta più tardi, scatta di nuovo.
         var again: [Bool] = []
         for vk in down { again.append(sync.observeIncoming(vk: vk, flags: 0, now: 20)) }
-        #expect(again == [false, false, true])
+        #expect(again == [false, false, false, true])
     }
 
     @Test func doesNotFireOnPartialOrStaleModifiers() {
-        var sync = LockSync(letter: "L")
-        // Solo Ctrl.
+        var sync = LockSync(shortcut: "Win+Ctrl+Alt+L")
+        // Manca Win.
         _ = sync.observeIncoming(vk: 0xA2, flags: 0, now: 0)
+        _ = sync.observeIncoming(vk: 0xA4, flags: 0, now: 0)
         let fired1 = sync.observeIncoming(vk: 0x4C, flags: 0, now: 0.1)
         #expect(!fired1)
-        // Ctrl e Alt rilasciati prima della lettera.
-        _ = sync.observeIncoming(vk: 0xA4, flags: 0, now: 0.2)
-        _ = sync.observeIncoming(vk: 0xA4, flags: 0x80, now: 0.3)
+        // Win premuto e rilasciato prima del tasto.
+        _ = sync.observeIncoming(vk: 0x5B, flags: 0, now: 0.2)
+        _ = sync.observeIncoming(vk: 0x5B, flags: 0x80, now: 0.3)
         let fired2 = sync.observeIncoming(vk: 0x4C, flags: 0, now: 0.4)
         #expect(!fired2)
         // Modificatori premuti e rilascio perso: dopo la pausa non contano più.
-        _ = sync.observeIncoming(vk: 0xA2, flags: 0, now: 1)
-        _ = sync.observeIncoming(vk: 0xA4, flags: 0, now: 1)
+        for vk: Int32 in [0x5B, 0xA2, 0xA4] { _ = sync.observeIncoming(vk: vk, flags: 0, now: 1) }
         let fired3 = sync.observeIncoming(vk: 0x4C, flags: 0, now: 10)
         #expect(!fired3)
-        // Altra lettera.
-        _ = sync.observeIncoming(vk: 0xA2, flags: 0, now: 20)
-        _ = sync.observeIncoming(vk: 0xA4, flags: 0, now: 20)
+        // Altro tasto.
+        for vk: Int32 in [0x5B, 0xA2, 0xA4] { _ = sync.observeIncoming(vk: vk, flags: 0, now: 20) }
         let fired4 = sync.observeIncoming(vk: 0x4B, flags: 0, now: 20)
         #expect(!fired4)
     }
