@@ -126,6 +126,13 @@ che preme due volte la scorciatoia invia invece VK_MENU, VK_SHIFT, VK_LWIN, VK_C
 a ALL. Il Mac si blocca con un ⌃⌘Q sintetico marcato in `eventSourceUserData`, che il tap
 lascia passare.
 
+Cambio di desktop sul PC (blocco, schermata di accesso, click sulla schermata di blocco):
+con MWB in modalità servizio c'è un processo per desktop e al cambio quello non più attivo
+termina (`WinAPI.CheckForDesktopSwitchEvent`), chiudendo tutte le connessioni; il nuovo si
+ricollega in meno di un secondo e accetta subito il mouse remoto. Il `Controller` quindi,
+se cade il PC controllato, resta in remoto per `reconnectGrace` (3 s) e prosegue se la
+macchina si ricollega con lo stesso nome, come fa PowerToys (`SetMachineDisconnected`).
+
 Mai provare la connessione al PC con una chiave sbagliata: dopo dieci pacchetti non
 validi PowerToys marca `InvalidKeyFound` e smette di aprire connessioni client.
 

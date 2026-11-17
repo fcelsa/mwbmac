@@ -47,6 +47,16 @@ public final class Controller {
     /// Subito dopo l'ingresso un `NextMachine` è quasi certamente un rimbalzo.
     private static let bounceGuard: TimeInterval = 0.25
 
+    /// Attesa della riconnessione del PC controllato prima di tornare al Mac. Al cambio
+    /// di desktop (blocco, schermata di accesso) il Mouse Without Borders del PC passa a
+    /// un altro processo e chiude tutte le connessioni, per riaprirle in meno di un secondo.
+    /// Anche PowerToys, quando controlla, non restituisce subito il controllo
+    /// (`MachinePool.SetMachineDisconnected`) e riprende con la macchina che si ricollega
+    /// con lo stesso nome (`SocketStuff`, "Des ID updated").
+    static let reconnectGrace: TimeInterval = 3
+    /// Timer di attesa della riconnessione, attivo solo in stato remoto.
+    private var reconnectTimeout: DispatchWorkItem?
+
     public init(settings: Settings, session: Session, log: Log) {
         self.settings = settings
         self.session = session
@@ -62,9 +72,10 @@ public final class Controller {
         session.onPacket = { [weak self] packet in
             DispatchQueue.main.async { self?.received(packet) }
         }
-        session.onMachineConnected = { [weak self] _ in
+        session.onMachineConnected = { [weak self] machine in
             DispatchQueue.main.async {
                 guard let self else { return }
+                self.machineReconnected(machine)
                 self.onMachinesChanged?(self.session.connectedMachines)
             }
         }
@@ -220,6 +231,8 @@ public final class Controller {
     private func returnToLocal(reason: String, at point: CGPoint?) {
         guard case .remote(let machine) = state else { return }
         state = .local
+        reconnectTimeout?.cancel()
+        reconnectTimeout = nil
         // Niente tasti o pulsanti incastrati sul PC; HideMouse fa anche rilasciare
         // tutti i tasti a PowerToys (`Receiver.cs`, ramo `HideMouse`).
         let released = translator.releaseAll()
@@ -399,10 +412,35 @@ public final class Controller {
         }
     }
 
+    /// Se il PC cade mentre si è in stato remoto l'input del Mac è soppresso: si attende
+    /// la riconnessione per `reconnectGrace` secondi, poi si torna in locale. Nel frattempo
+    /// l'input viene scartato (la sessione non ha a chi inviarlo), come fa PowerToys, e la
+    /// scorciatoia di emergenza resta attiva.
     private func machineDisconnected(_ machine: Session.Machine) {
-        guard case .remote(let current) = state, current.id == machine.id else { return }
-        // Se il PC cade mentre si è in stato remoto l'input del Mac è soppresso:
-        // si torna subito in locale.
-        returnToLocal(reason: "connessione persa", at: exitPosition)
+        guard case .remote(let current) = state, current.id == machine.id, reconnectTimeout == nil else { return }
+        // Il processo del PC che subentra non conosce i tasti premuti finora: si azzera lo
+        // stato, così i rilasci successivi non vengono inviati.
+        _ = translator.releaseAll()
+        log.info("Connessione con \"\(machine.name)\" persa: attendo la riconnessione per \(Int(Controller.reconnectGrace)) s")
+        let timeout = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.reconnectTimeout = nil
+            self.returnToLocal(reason: "connessione persa", at: self.exitPosition)
+        }
+        reconnectTimeout = timeout
+        DispatchQueue.main.asyncAfter(deadline: .now() + Controller.reconnectGrace, execute: timeout)
+    }
+
+    /// Il PC controllato si è ricollegato entro l'attesa: il controllo prosegue. Il nuovo
+    /// processo accetta subito il mouse remoto (`Receiver`, ramo `Mouse`), quindi non serve
+    /// altro che indirizzare i pacchetti al suo identificativo.
+    private func machineReconnected(_ machine: Session.Machine) {
+        guard let timeout = reconnectTimeout, case .remote(let current) = state,
+              current.name.caseInsensitiveCompare(machine.name) == .orderedSame else { return }
+        timeout.cancel()
+        reconnectTimeout = nil
+        state = .remote(machine)
+        log.info("\"\(machine.name)\" di nuovo connesso: il controllo prosegue")
+        if machine != current { onStateChange?(state) }
     }
 }
