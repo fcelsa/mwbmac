@@ -32,6 +32,7 @@ public final class Controller {
     private let log: Log
     private let tap = InputTap()
     private var detector: EdgeDetector
+    private var clipboard: ClipboardBridge?
     private var translator: InputTranslator
 
     private var displays: [CGRect] = []
@@ -78,12 +79,22 @@ public final class Controller {
             self?.handle(type: type, event: event) ?? .pass
         }
         try tap.start()
+        if settings.shareClipboard {
+            let bridge = ClipboardBridge(session: session, log: log) { [weak self] in
+                if case .remote(let machine) = self?.state { return machine.id }
+                return nil
+            }
+            bridge.start()
+            clipboard = bridge
+        }
     }
 
     /// Riporta l'input al Mac e smonta il tap. Da chiamare prima di uscire.
     public func stop() {
         returnToLocal(reason: "arresto", at: exitPosition)
         tap.stop()
+        clipboard?.stop()
+        clipboard = nil
     }
 
     // MARK: Eventi di input
@@ -179,6 +190,8 @@ public final class Controller {
 
         // `PrepareToSwitchToMachine`: MachineSwitched alla nuova destinazione, poi il
         // cursore del PC viene portato nel punto d'ingresso con un movimento assoluto.
+        // Gli appunti grandi vengono ritirati dal PC proprio al cambio macchina.
+        session.refreshClipboardOffer(for: machine.id)
         session.send(Packet(type: .machineSwitched, des: machine.id))
         if !viaHotkey {
             let entry = detector.entryPoint(fraction: fraction)

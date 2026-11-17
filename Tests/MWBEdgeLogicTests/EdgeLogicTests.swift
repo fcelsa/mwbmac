@@ -1,6 +1,9 @@
 import Testing
 import Foundation
+import AppKit
 import CoreGraphics
+import ImageIO
+import MWBProtocol
 @testable import MWBEdgeLogic
 
 struct EdgeDetectorTests {
@@ -116,6 +119,71 @@ struct EdgeDetectorTests {
         let displays = [single[0], CGRect(x: 1920, y: 0, width: 1280, height: 720)]
         #expect(right.outermostDisplay(in: displays) == displays[1])
         #expect(EdgeDetector(edge: .left).outermostDisplay(in: displays) == displays[0])
+    }
+}
+
+struct ClipboardImageTests {
+    /// Immagine di prova nello spazio colore indicato, restituita come TIFF (ciò che
+    /// molte applicazioni Mac mettono negli appunti).
+    private func makeTIFF(width: Int, height: Int, space: CFString, bits: Int = 8) throws -> Data {
+        let colorSpace = try #require(CGColorSpace(name: space))
+        let info = bits == 16
+            ? CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder16Little.rawValue
+            : CGImageAlphaInfo.premultipliedLast.rawValue
+        let context = try #require(CGContext(data: nil, width: width, height: height, bitsPerComponent: bits,
+                                             bytesPerRow: 0, space: colorSpace, bitmapInfo: info))
+        context.setFillColor(red: 1, green: 0.2, blue: 0.1, alpha: 1)
+        context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+        context.setFillColor(red: 0, green: 0.5, blue: 1, alpha: 1)
+        context.fill(CGRect(x: width / 4, y: height / 4, width: width / 2, height: height / 2))
+        let image = try #require(context.makeImage())
+        return try #require(NSBitmapImageRep(cgImage: image).tiffRepresentation)
+    }
+
+    private func decode(_ png: Data) throws -> CGImage {
+        let source = try #require(CGImageSourceCreateWithData(png as CFData, nil))
+        return try #require(CGImageSourceCreateImageAtIndex(source, 0, nil))
+    }
+
+    @Test func tiffBecomesAnEightBitSRGBPNG() throws {
+        let tiff = try makeTIFF(width: 320, height: 200, space: CGColorSpace.displayP3, bits: 16)
+        let png = try #require(ClipboardBridge.normalizedPNG(from: tiff))
+        #expect(PNGData.isPNG([UInt8](png)))
+        #expect(PNGData.sanitized([UInt8](png)) == [UInt8](png))
+        let image = try decode(png)
+        #expect(image.width == 320 && image.height == 200)
+        #expect(image.bitsPerComponent == 8)
+        #expect(image.colorSpace?.name == CGColorSpace.sRGB)
+    }
+
+    /// Ciò che arriva dal PC: un PNG seguito da zeri, oppure con la coda mancante.
+    @Test func receivedPNGWithPaddingOrMissingTailStillDecodes() throws {
+        let tiff = try makeTIFF(width: 640, height: 480, space: CGColorSpace.sRGB)
+        let original = [UInt8](try #require(ClipboardBridge.normalizedPNG(from: tiff)))
+
+        let padded = original + [UInt8](repeating: 0, count: 4096 - original.count % 4096)
+        let cleaned = try #require(PNGData.sanitized(padded))
+        #expect(cleaned == original)
+
+        for missing in [1, 7, 12, 15] {
+            let repaired = try #require(PNGData.sanitized(Array(original.dropLast(missing))))
+            let png = try #require(ClipboardBridge.normalizedPNG(from: Data(repaired), convertToSRGB: false),
+                                   "mancano \(missing) byte")
+            let image = try decode(png)
+            #expect(image.width == 640 && image.height == 480)
+        }
+    }
+
+    @Test func otherFormatsAndGarbage() throws {
+        // JPEG (o qualunque formato noto al sistema) viene ricodificato in PNG.
+        let tiff = try makeTIFF(width: 64, height: 64, space: CGColorSpace.sRGB)
+        let jpeg = try #require(NSBitmapImageRep(data: tiff)?.representation(using: .jpeg, properties: [:]))
+        let png = try #require(ClipboardBridge.normalizedPNG(from: jpeg))
+        #expect(PNGData.isPNG([UInt8](png)))
+
+        #expect(ClipboardBridge.normalizedPNG(from: Data([1, 2, 3, 4, 5])) == nil)
+        #expect(ClipboardBridge.normalizedPNG(from: Data()) == nil)
+        #expect(ClipboardBridge.normalizedPNG(from: Data(repeating: 0, count: 5000)) == nil)
     }
 }
 

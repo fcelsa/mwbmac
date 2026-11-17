@@ -37,6 +37,26 @@ crea nel portachiavi di login un certificato autofirmato "mwbmac local signing";
 momento `build-app.sh` lo usa da solo e i permessi restano validi fra una build e l'altra.
 Alla prima firma macOS chiede di autorizzare `codesign` a usare la chiave.
 
+## Appunti condivisi
+
+Testo (semplice, RTF, HTML) e immagini passano nelle due direzioni: si copia da una
+parte e si incolla dall'altra, comprese le catture schermo. Sul PC deve essere attiva
+l'opzione "Share clipboard" di Mouse Without Borders.
+
+- Fino a 1 MB il contenuto parte subito, sul canale dei messaggi.
+- Oltre (tipicamente le catture schermo) viaggia sul canale appunti, porta 15100. Dal PC
+  al Mac viene ritirato appena copiato; dal Mac al PC è PowerToys a ritirarlo nel momento
+  in cui il controllo passa al PC.
+- Le immagini arrivano sul PC come PNG a 8 bit in sRGB; sul Mac vengono offerte come PNG
+  e TIFF.
+- Restano fuori i file copiati nel Finder o in Esplora risorse, il trascinamento e i
+  contenuti che i gestori di password marcano come riservati.
+
+Si disattiva con `"shareClipboard": false` nelle preferenze o dalla scheda Connessione.
+
+Diagnosi dell'app: `~/Library/Logs/mwbmac/mwbmac.log`; i messaggi dettagliati si attivano con
+`defaults write local.mwbmac.host verbose -bool true` (mai il contenuto degli appunti).
+
 ## Compilazione e test
 
 ```bash
@@ -108,16 +128,17 @@ manualmente al PC). In stato remoto l'input locale è soppresso: tenerla a mente
 | `rightOptionIsAltGr` | ⌥ destro come AltGr (`@ # [ ] { }` su layout italiano) | `true` |
 | `invertScroll` | inverte il verso della rotella | `false` |
 | `hotkey` | scorciatoia di emergenza (keycode macOS + modificatori) | ⌃⌥⌘Esc |
+| `shareClipboard` | appunti condivisi, testo e immagini | `true` |
 
 ## Struttura
 
 | Modulo | Contenuto |
 |---|---|
-| `MWBProtocol` | pacchetti 32/64 byte, checksum, magic, PBKDF2/AES, handshake |
-| `MWBTransport` | listener 15101, connessione uscente con riconnessione, heartbeat, machine pool |
+| `MWBProtocol` | pacchetti 32/64 byte, checksum, magic, PBKDF2/AES, handshake, formati degli appunti |
+| `MWBTransport` | listener 15101, connessione uscente con riconnessione, heartbeat, machine pool, canale appunti 15100 |
 | `MWBInputCapture` | CGEventTap, mappa keycode → VK Windows, traduzione mouse/rotella/tasti |
-| `MWBEdgeLogic` | rilevamento del bordo, preferenze, Keychain, macchina di stato locale/remoto |
+| `MWBEdgeLogic` | rilevamento del bordo, preferenze, Keychain, macchina di stato locale/remoto, ponte con NSPasteboard |
 | `mwbmac` | riga di comando |
 | `MWBMacHost` | app da barra menu (AppKit + impostazioni SwiftUI) |
 
-Fuori perimetro per ora: appunti e trasferimento file.
+Fuori perimetro: trasferimento di file e trascinamento fra le macchine.

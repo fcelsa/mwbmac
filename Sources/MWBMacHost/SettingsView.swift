@@ -71,6 +71,9 @@ struct SettingsView: View {
                 Text("La chiave è quella mostrata da PowerToys → Mouse Without Borders. Viene conservata solo nel Keychain.")
                     .font(.caption).foregroundStyle(.secondary)
             }
+            Section("Appunti") {
+                Toggle("Condividi gli appunti con il PC (testo e immagini)", isOn: $state.settings.shareClipboard)
+            }
             if model.status == .missingPermissions {
                 Section("Permessi") {
                     permissionRow("Accessibilità", granted: model.hasAccessibility, pane: "Privacy_Accessibility")

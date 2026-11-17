@@ -45,6 +45,9 @@ final class AppModel: ObservableObject {
     private var permissionTimer: Timer?
     private var promptedForPermissions = false
     private static let enabledKey = "enabled"
+    /// Registro su file (~/Library/Logs/mwbmac/mwbmac.log): un'app da barra menu non ha
+    /// un terminale su cui scrivere.
+    static let logFile = LogFile()
 
     init() {
         settings = (try? Settings.load()) ?? Settings()
@@ -135,15 +138,19 @@ final class AppModel: ObservableObject {
             return
         }
 
-        let log = Log()
+        // `defaults write local.mwbmac.host verbose -bool true` attiva i messaggi di diagnosi.
+        let log = Log(debugEnabled: UserDefaults.standard.bool(forKey: "verbose"))
         let standardSink = log.sink
+        let logFile = AppModel.logFile
         log.sink = { [weak self] line in
             standardSink(line)
+            logFile.append(line)
             DispatchQueue.main.async { self?.lastMessage = line }
         }
-        let configuration = Session.Configuration(localName: settings.localName, machineID: settings.machineID,
+        var configuration = Session.Configuration(localName: settings.localName, machineID: settings.machineID,
                                                   securityKey: key, remoteHost: settings.remoteHost,
                                                   basePort: settings.basePort, listenPort: settings.basePort + 1)
+        if settings.shareClipboard { configuration.clipboardListenPort = settings.basePort }
         let session = Session(configuration: configuration, log: log)
         let controller = Controller(settings: settings, session: session, log: log)
         controller.onStateChange = { [weak self] _ in self?.refreshStatus() }

@@ -145,13 +145,14 @@ func makeSession(settings: Settings, options: Options, log: Log) -> Session {
     guard !settings.remoteHost.isEmpty else {
         fail("nome del PC non configurato: usare --host <nome>")
     }
-    let configuration = Session.Configuration(
+    var configuration = Session.Configuration(
         localName: settings.localName,
         machineID: settings.machineID,
         securityKey: loadSecurityKey(),
         remoteHost: settings.remoteHost,
         basePort: settings.basePort,
         listenPort: options.noListen ? nil : settings.basePort + 1)
+    if settings.shareClipboard, !options.noListen { configuration.clipboardListenPort = settings.basePort }
     return Session(configuration: configuration, log: log)
 }
 

@@ -59,6 +59,8 @@ final class PeerConnection {
     var onTrusted: ((PeerConnection) -> Void)?
     var onPacket: ((Packet, PeerConnection) -> Void)?
     var onClosed: ((PeerConnection, CloseReason) -> Void)?
+    /// Appunti arrivati in linea su questa connessione (blocchi + `ClipboardDataEnd`).
+    var onClipboard: ((ClipboardPayload, PeerConnection) -> Void)?
 
     private(set) var remoteID: UInt32 = MachineID.none
     private(set) var remoteName: String = ""
@@ -82,6 +84,17 @@ final class PeerConnection {
     private var randomBlockSkipped = false
     private var challenge: Packet
     private var invalidCount = 0
+    private var clipboardKind: ClipboardKind?
+    private var clipboardBuffer: [UInt8] = []
+    /// Oltre questa soglia un flusso in linea è anomalo (PowerToys si ferma a 1 MB) e si scarta.
+    private static let inlineClipboardCap = 16 * ClipboardPayload.inlineLimit
+
+    /// Indirizzo del peer, per aprire verso di lui il canale appunti.
+    var remoteHost: NWEndpoint.Host? {
+        let endpoint = connection.currentPath?.remoteEndpoint ?? connection.endpoint
+        if case .hostPort(let host, _) = endpoint { return host }
+        return nil
+    }
 
     init(connection: NWConnection, isOutgoing: Bool, context: Context, queue: DispatchQueue) {
         self.connection = connection
@@ -125,7 +138,7 @@ final class PeerConnection {
     /// Invia un pacchetto già completo di Id, Src e Des.
     func send(_ packet: Packet) {
         guard !isClosed, let encryptor else { return }
-        if context.log.protocolEnabled { context.log.packet("TX", label, packet) }
+        if context.log.protocolEnabled, !PeerConnection.isClipboardChunk(packet) { context.log.packet("TX", label, packet) }
         do {
             let cipher = try encryptor.process(packet.serialized(magic: context.magic))
             sendRaw(cipher)
@@ -287,7 +300,7 @@ final class PeerConnection {
     }
 
     private func handle(_ packet: Packet) {
-        if context.log.protocolEnabled { context.log.packet("RX", label, packet) }
+        if context.log.protocolEnabled, !PeerConnection.isClipboardChunk(packet) { context.log.packet("RX", label, packet) }
         switch packet.type {
         case .handshake:
             send(Handshake.ack(for: packet, localName: context.localName, localID: context.localID))
@@ -305,7 +318,38 @@ final class PeerConnection {
         default:
             // Prima della fiducia PowerToys conta i pacchetti inattesi; qui si ignorano.
             guard isTrusted else { return }
-            onPacket?(packet, self)
+            if !handleInlineClipboard(packet) { onPacket?(packet, self) }
+        }
+    }
+
+    private static func isClipboardChunk(_ packet: Packet) -> Bool {
+        packet.type == .clipboardText || packet.type == .clipboardImage
+    }
+
+    /// Ricomposizione degli appunti inviati in linea (`Clipboard.ReceiveClipboardDataUsingTCP`):
+    /// i blocchi si accumulano fino a `ClipboardDataEnd`; gli altri pacchetti nel mezzo
+    /// seguono la strada normale.
+    private func handleInlineClipboard(_ packet: Packet) -> Bool {
+        switch packet.type {
+        case .clipboardText, .clipboardImage:
+            let kind: ClipboardKind = packet.type == .clipboardImage ? .image : .text
+            if clipboardKind != kind {
+                clipboardKind = kind
+                clipboardBuffer.removeAll(keepingCapacity: true)
+            }
+            if clipboardBuffer.count < PeerConnection.inlineClipboardCap {
+                clipboardBuffer.append(contentsOf: packet.clipboardChunk)
+            }
+            return true
+        case .clipboardDataEnd:
+            if let kind = clipboardKind, !clipboardBuffer.isEmpty, clipboardBuffer.count < PeerConnection.inlineClipboardCap {
+                onClipboard?(ClipboardPayload(kind: kind, data: clipboardBuffer), self)
+            }
+            clipboardKind = nil
+            clipboardBuffer = []
+            return true
+        default:
+            return false
         }
     }
 }

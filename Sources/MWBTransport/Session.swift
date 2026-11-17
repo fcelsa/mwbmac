@@ -23,6 +23,9 @@ public final class Session: @unchecked Sendable {
         public var reconnectInterval: TimeInterval
         /// Schema di cifratura; `.auto` lo riconosce dal flusso del PC.
         public var cipherScheme: CipherScheme = .auto
+        /// Porta locale del canale appunti (di norma la porta base); `nil` = non ascoltare.
+        /// Senza listener il PC ripiega su `ClipboardAsk` e i dati gli vengono spinti.
+        public var clipboardListenPort: UInt16?
 
         public init(localName: String, machineID: UInt32, securityKey: String, remoteHost: String?,
                     basePort: UInt16 = 15100, listenPort: UInt16? = 15101,
@@ -49,6 +52,8 @@ public final class Session: @unchecked Sendable {
     public var onPacket: ((Packet) -> Void)?
     /// La security key non coincide con quella del PC; la sessione smette di riprovare.
     public var onInvalidKey: (() -> Void)?
+    /// Appunti ricevuti da un'altra macchina (in linea o dal canale appunti).
+    public var onClipboardReceived: ((ClipboardPayload, Machine) -> Void)?
 
     public let log: Log
     private let configuration: Configuration
@@ -67,6 +72,17 @@ public final class Session: @unchecked Sendable {
     /// Dopo un flusso illeggibile non si riprova: una raffica di tentativi con la
     /// chiave sbagliata fa scattare le protezioni di PowerToys (`InvalidKeyFound`).
     private var invalidKeyLatched = false
+
+    // Appunti
+    private var clipboardListener: NWListener?
+    private var transfers: [ClipboardTransfer] = []
+    /// Ultimo contenuto copiato sul Mac, offerto a chi lo chiede sul canale appunti.
+    private var localClipboard: ClipboardPayload?
+    /// Macchine che hanno già ritirato `localClipboard` (se grande).
+    private var deliveredTo = Set<UInt32>()
+    private var pullsInProgress = Set<UInt32>()
+    private var lastReceivedDigest: (digest: Int, time: Date)?
+    private var lastScheme = CipherScheme.current
 
     private let stateLock = NSLock()
     private var connectedSnapshot: [Machine] = []
@@ -96,6 +112,7 @@ public final class Session: @unchecked Sendable {
             guard !running else { return }
             running = true
             startListener()
+            startClipboardListener()
             connectIfNeeded()
             let timer = DispatchSource.makeTimerSource(queue: queue)
             timer.schedule(deadline: .now() + 1, repeating: 1)
@@ -115,6 +132,9 @@ public final class Session: @unchecked Sendable {
             broadcast(Packet(type: .byeBye, des: MachineID.all, machineName: configuration.localName))
             listener?.cancel()
             listener = nil
+            clipboardListener?.cancel()
+            clipboardListener = nil
+            transfers.forEach { $0.cancel() }
             let closing = peers
             // Lascia a Network.framework il tempo di svuotare il buffer di invio.
             queue.asyncAfter(deadline: .now() + 0.2) {
@@ -200,6 +220,7 @@ public final class Session: @unchecked Sendable {
         peer.onTrusted = { [weak self] peer in self?.peerTrusted(peer) }
         peer.onPacket = { [weak self] packet, peer in self?.received(packet, from: peer) }
         peer.onClosed = { [weak self] peer, reason in self?.peerClosed(peer, reason) }
+        peer.onClipboard = { [weak self] payload, peer in self?.receivedClipboard(payload, from: peer.remoteID) }
         peers.append(peer)
         if !isOutgoing { log.debug("Connessione entrante da \(connection.endpoint)") }
         peer.start()
@@ -211,6 +232,7 @@ public final class Session: @unchecked Sendable {
             peer.close(.local)
             return
         }
+        if let scheme = peer.activeScheme { lastScheme = scheme }
         let machine = Machine(id: peer.remoteID, name: peer.remoteName)
         let isNew = pool[machine.id] == nil
         pool[machine.id] = machine
@@ -251,6 +273,126 @@ public final class Session: @unchecked Sendable {
         stateLock.unlock()
     }
 
+    // MARK: Appunti
+
+    /// Pubblica il contenuto appena copiato sul Mac. Fino a 1 MB viaggia subito in linea;
+    /// oltre viene annunciato e il PC lo ritira quando il controllo passa a lui.
+    /// `activeMachine` è la macchina sotto controllo in questo momento, se c'è: in quel
+    /// caso il passaggio è già avvenuto e l'annuncio va accompagnato da `MachineSwitched`.
+    public func sendClipboard(_ payload: ClipboardPayload, activeMachine: UInt32? = nil) {
+        queue.async { [self] in
+            guard running else { return }
+            guard payload.data.count <= ClipboardPayload.maxSize else {
+                log.info("Appunti non inviati: \(payload.data.count / (1024 * 1024)) MB superano il limite di 100 MB")
+                return
+            }
+            localClipboard = payload
+            deliveredTo.removeAll()
+            if payload.isInline {
+                log.debug("Appunti (\(payload.kind.rawValue), \(payload.data.count) byte) inviati in linea")
+                payload.inlinePackets().forEach { broadcast($0) }
+            } else {
+                log.debug("Appunti (\(payload.kind.rawValue), \(payload.data.count) byte) annunciati")
+                announceClipboard()
+                if let activeMachine { broadcast(Packet(type: .machineSwitched, des: activeMachine)) }
+            }
+        }
+    }
+
+    /// Da chiamare subito prima di `MachineSwitched`: se la macchina non ha ancora ritirato
+    /// gli appunti grandi, l'annuncio viene ripetuto. PowerToys li ritira solo se l'annuncio
+    /// è arrivato da meno di 30 secondi (`BIG_CLIPBOARD_DATA_TIMEOUT`).
+    public func refreshClipboardOffer(for machineID: UInt32) {
+        queue.async { [self] in
+            guard running, let payload = localClipboard, !payload.isInline, !deliveredTo.contains(machineID) else { return }
+            announceClipboard()
+        }
+    }
+
+    private func announceClipboard() {
+        broadcast(Packet(type: .clipboard, des: MachineID.all, machineName: configuration.localName))
+    }
+
+    private func startClipboardListener() {
+        guard let port = configuration.clipboardListenPort, let nwPort = NWEndpoint.Port(rawValue: port) else { return }
+        do {
+            let listener = try NWListener(using: Session.tcpParameters(), on: nwPort)
+            listener.newConnectionHandler = { [weak self] connection in
+                guard let self else { return }
+                self.log.debug("Canale appunti: connessione entrante da \(connection.endpoint)")
+                self.startTransfer(connection, role: .serve(self.localClipboard))
+            }
+            listener.stateUpdateHandler = { [weak self] state in
+                if case .failed(let error) = state {
+                    self?.log.info("Listener degli appunti sulla porta \(port) fallito: \(error)")
+                }
+            }
+            listener.start(queue: queue)
+            clipboardListener = listener
+        } catch {
+            log.info("Impossibile aprire il listener degli appunti sulla porta \(port): \(error)")
+        }
+    }
+
+    private func clipboardConnection(to machineID: UInt32) -> NWConnection? {
+        let candidates = peers.filter { $0.isTrusted && !$0.isClosed && $0.remoteID == machineID }
+        guard let host = candidates.compactMap(\.remoteHost).first
+                ?? configuration.remoteHost.map({ NWEndpoint.Host($0) }),
+              let port = NWEndpoint.Port(rawValue: configuration.basePort) else { return nil }
+        return NWConnection(host: host, port: port, using: Session.tcpParameters())
+    }
+
+    private func pullClipboard(from machineID: UInt32) {
+        guard pool[machineID] != nil, !pullsInProgress.contains(machineID),
+              let connection = clipboardConnection(to: machineID) else { return }
+        pullsInProgress.insert(machineID)
+        log.debug("Canale appunti: richiesta dei dati a \(pool[machineID]?.name ?? "?")")
+        startTransfer(connection, role: .pull, pullingFrom: machineID)
+    }
+
+    private func pushClipboard(to machineID: UInt32) {
+        guard let payload = localClipboard, pool[machineID] != nil,
+              let connection = clipboardConnection(to: machineID) else { return }
+        log.debug("Canale appunti: invio dei dati a \(pool[machineID]?.name ?? "?") su sua richiesta")
+        startTransfer(connection, role: .push(payload))
+    }
+
+    private func startTransfer(_ connection: NWConnection, role: ClipboardTransfer.Role, pullingFrom: UInt32? = nil) {
+        let transfer = ClipboardTransfer(
+            connection: connection, role: role, scheme: lastScheme, context: context, queue: queue,
+            isKnownMachine: { [weak self] id, _ in self?.pool[id] != nil },
+            completion: { [weak self] transfer, outcome in
+                guard let self else { return }
+                self.transfers.removeAll { $0 === transfer }
+                if let pullingFrom { self.pullsInProgress.remove(pullingFrom) }
+                switch outcome {
+                case .received(let payload, let machineID, _):
+                    self.receivedClipboard(payload, from: machineID)
+                case .sent(let machineID, let bytes):
+                    self.deliveredTo.insert(machineID)
+                    self.log.debug("\(transfer.label): inviati \(bytes) byte")
+                case .failed(let reason):
+                    self.log.debug("\(transfer.label): \(reason)")
+                }
+            })
+        transfers.append(transfer)
+        transfer.start()
+    }
+
+    private func receivedClipboard(_ payload: ClipboardPayload, from machineID: UInt32) {
+        guard let machine = pool[machineID] else { return }
+        // PowerToys invia gli appunti in linea su tutti i socket verso la macchina: lo
+        // stesso contenuto arriva due volte a distanza di millisecondi.
+        var hasher = Hasher()
+        hasher.combine(payload.kind)
+        hasher.combine(payload.data)
+        let digest = hasher.finalize()
+        if let last = lastReceivedDigest, last.digest == digest, Date().timeIntervalSince(last.time) < 3 { return }
+        lastReceivedDigest = (digest, Date())
+        log.debug("Appunti ricevuti da \(machine.name): \(payload.kind.rawValue), \(payload.data.count) byte")
+        onClipboardReceived?(payload, machine)
+    }
+
     // MARK: Manutenzione
 
     private func tick() {
@@ -278,9 +420,15 @@ public final class Session: @unchecked Sendable {
         case .hello:
             // `Receiver.ProcessPackage`: a Hello si risponde con un heartbeat.
             sendHeartbeat()
-        case .byeBye:
-            // La chiusura dei socket segue a ruota; qui si avvisa subito chi controlla.
-            break
+        case .clipboard:
+            // `Receiver.cs`: il mittente ha negli appunti dati troppo grandi per l'invio in
+            // linea. PowerToys li ritira al cambio macchina; qui si ritirano subito, così
+            // sono già pronti quando si torna al Mac.
+            pullClipboard(from: packet.src)
+        case .clipboardAsk:
+            // Il mittente non riesce a connettersi al nostro canale appunti e chiede che
+            // i dati gli vengano spinti (`Clipboard.ConnectAndGetData`).
+            if packet.des == configuration.machineID { pushClipboard(to: packet.src) }
         default:
             break
         }

@@ -31,7 +31,8 @@ opposta) e `lucky-verma/mwb-linux` (Go, bidirezionale, clipboard).
 - Security key nel Keychain, mai in chiaro nelle preferenze.
 - Scorciatoia di emergenza per tornare al Mac: obbligatoria fin dal primo prototipo
   (in stato remoto l'input locale è soppresso).
-- Clipboard e trasferimento file: fuori perimetro nella prima versione.
+- Clipboard: testo e immagini nelle due direzioni (implementata dopo la fase 5).
+  Trasferimento file e drag & drop: fuori perimetro.
 
 ## Moduli (vedi docs/analisi.md §4)
 
@@ -92,6 +93,18 @@ Non tornare al riposizionamento del cursore a ogni evento (`CGWarpMouseCursorPos
 alla Synergy): è stato provato in tre varianti e falsa i delta degli eventi, rendendo il
 cursore del PC incontrollabile. Per lo stesso motivo anche `mwbmac run` gira come app
 "agente" con un ciclo di eventi AppKit.
+
+Appunti (`Core/Clipboard.cs`): testo = "TXT…SEP[RTF…SEP][HTM…SEP]" in UTF-16LE con
+Deflate grezzo; immagine = PNG. Fino a 1 MB in linea sul canale messaggi (pacchetti da 64
+byte con 48 byte di dati agli offset 16..63, poi `ClipboardDataEnd`); oltre, pacchetto
+`Clipboard` di annuncio e canale appunti sulla porta base. Dettagli non ovvi:
+- PowerToys invia i buffer con la capacità e non la lunghezza: zeri in coda a testo e PNG;
+- invia gli appunti in linea su tutti i socket verso la macchina: arrivano due volte;
+- ritira i dati grandi solo al `MachineSwitched` e solo se l'annuncio ha meno di 30 s,
+  quindi `Controller` lo fa ripetere subito prima del cambio macchina;
+- sul canale appunti legge fino alla chiusura della connessione e vuole un multiplo di
+  16 byte, altrimenti la decifratura dell'ultimo blocco fallisce;
+- il pacchetto di saluto del canale appunti non porta magic né checksum.
 
 Mai provare la connessione al PC con una chiave sbagliata: dopo dieci pacchetti non
 validi PowerToys marca `InvalidKeyFound` e smette di aprire connessioni client.

@@ -46,6 +46,7 @@ public struct Packet: Equatable, Sendable {
     public static let sizeEx = 64
     public static let payloadSize = 16
     public static let nameSize = 32
+    public static let clipboardChunkSize = 48
 
     /// Primo byte così com'è sul filo (può contenere i flag di `Matrix`).
     public var rawType: UInt8
@@ -54,8 +55,25 @@ public struct Packet: Equatable, Sendable {
     public var des: UInt32 = MachineID.none
     /// 16 byte agli offset 16..31.
     public var payload: [UInt8] = [UInt8](repeating: 0, count: Packet.payloadSize)
-    /// Presente solo nei pacchetti da 64 byte; senza spazi di riempimento.
-    public var machineName: String = ""
+    /// Byte 32..63, presenti sul filo solo nei pacchetti da 64 byte. Di norma contengono il
+    /// nome macchina; nei pacchetti `ClipboardText`/`ClipboardImage` sono dati.
+    public var tail: [UInt8] = Packet.encodeName("")
+
+    /// Nome macchina senza spazi di riempimento (vista su `tail`).
+    public var machineName: String {
+        get { Packet.decodeName(tail) }
+        set { tail = Packet.encodeName(newValue) }
+    }
+
+    /// I 48 byte di dati (offset 16..63) dei pacchetti degli appunti inviati in linea.
+    public var clipboardChunk: [UInt8] {
+        get { payload + tail }
+        set {
+            precondition(newValue.count == Packet.clipboardChunkSize)
+            payload = Array(newValue[0..<Packet.payloadSize])
+            tail = Array(newValue[Packet.payloadSize...])
+        }
+    }
 
     public init(type: PackageType, des: UInt32 = MachineID.none, machineName: String = "") {
         self.rawType = type.rawValue
@@ -130,7 +148,7 @@ public struct Packet: Equatable, Sendable {
         buffer.setInt32(Int32(bitPattern: des), at: 12)
         buffer.replaceSubrange(16..<32, with: payload)
         if isBig {
-            buffer.replaceSubrange(32..<64, with: Packet.encodeName(machineName))
+            buffer.replaceSubrange(32..<64, with: tail)
         }
         buffer[1] = Packet.checksum(of: buffer)
         return buffer
@@ -162,7 +180,7 @@ public struct Packet: Equatable, Sendable {
         payload = Array(bytes[16..<32])
         if PackageType.isBig(rawType: rawType) {
             guard bytes.count >= Packet.sizeEx else { throw PacketError.truncated }
-            machineName = Packet.decodeName(Array(bytes[32..<64]))
+            tail = Array(bytes[32..<64])
         }
     }
 
@@ -200,7 +218,10 @@ extension Packet: CustomStringConvertible {
         default:
             break
         }
-        if isBig { text += " nome=\"\(machineName)\"" }
+        switch type {
+        case .clipboardText, .clipboardImage, .clipboardDataEnd: break
+        default: if isBig { text += " nome=\"\(machineName)\"" }
+        }
         return text
     }
 }

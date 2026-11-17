@@ -67,6 +67,8 @@ public struct Settings: Codable, Equatable, Sendable {
     public var rightOptionIsAltGr: Bool
     public var invertScroll: Bool
     public var hotkey: Hotkey
+    /// Condivisione degli appunti (testo e immagini) nelle due direzioni.
+    public var shareClipboard: Bool
 
     public init() {
         remoteHost = ""
@@ -85,6 +87,7 @@ public struct Settings: Codable, Equatable, Sendable {
         rightOptionIsAltGr = true
         invertScroll = false
         hotkey = Hotkey()
+        shareClipboard = true
     }
 
     /// Le chiavi assenti nel file prendono il valore predefinito, così le versioni
@@ -108,6 +111,7 @@ public struct Settings: Codable, Equatable, Sendable {
         rightOptionIsAltGr = try c.decodeIfPresent(Bool.self, forKey: .rightOptionIsAltGr) ?? rightOptionIsAltGr
         invertScroll = try c.decodeIfPresent(Bool.self, forKey: .invertScroll) ?? invertScroll
         hotkey = try c.decodeIfPresent(Hotkey.self, forKey: .hotkey) ?? hotkey
+        shareClipboard = try c.decodeIfPresent(Bool.self, forKey: .shareClipboard) ?? shareClipboard
     }
 
     public var activeRange: ClosedRange<Double> {
