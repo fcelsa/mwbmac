@@ -36,6 +36,14 @@ public final class Controller {
     private var translator: InputTranslator
     private var lockSync: LockSync
     private var lastLock: TimeInterval = -1_000
+    /// C'è stato input locale dall'ultimo `Awake` inviato.
+    private var hadLocalInput = false
+    private var awakeTimer: Timer?
+    private let userActivity = UserActivity()
+    private var lastFullScreenNotice: TimeInterval = -1_000
+
+    /// `frmScreen.HelperTimer_Tick`: un `Awake` al minuto, se nel frattempo c'è stato input.
+    static let awakeInterval: TimeInterval = 60
 
     private var displays: [CGRect] = []
     private var displaysRefreshed: TimeInterval = 0
@@ -93,6 +101,13 @@ public final class Controller {
             self?.handle(type: type, event: event) ?? .pass
         }
         try tap.start()
+        if settings.keepOthersAwake {
+            awakeTimer = Timer.scheduledTimer(withTimeInterval: Controller.awakeInterval, repeats: true) { [weak self] _ in
+                guard let self, self.hadLocalInput else { return }
+                self.hadLocalInput = false
+                self.session.sendAwake()
+            }
+        }
         if settings.shareClipboard {
             let bridge = ClipboardBridge(session: session, log: log) { [weak self] in
                 if case .remote(let machine) = self?.state { return machine.id }
@@ -106,6 +121,9 @@ public final class Controller {
     /// Riporta l'input al Mac e smonta il tap. Da chiamare prima di uscire.
     public func stop() {
         returnToLocal(reason: "arresto", at: exitPosition)
+        awakeTimer?.invalidate()
+        awakeTimer = nil
+        userActivity.release()
         tap.stop()
         clipboard?.stop()
         clipboard = nil
@@ -116,6 +134,7 @@ public final class Controller {
     private func handle(type: CGEventType, event: CGEvent) -> InputTap.Disposition {
         // Gli eventi generati dall'app stessa (blocco dello schermo) passano senza esame.
         if SystemLock.isOwnEvent(event) { return .pass }
+        hadLocalInput = true
         // La scorciatoia di emergenza ha la precedenza su tutto e non dipende dalla rete.
         if type == .keyDown, isHotkey(event) {
             if event.getIntegerValueField(.keyboardEventAutorepeat) == 0 { toggle() }
@@ -180,7 +199,16 @@ public final class Controller {
                                              deltaX: Double(event.getIntegerValueField(.mouseEventDeltaX)),
                                              deltaY: Double(event.getIntegerValueField(.mouseEventDeltaY)),
                                              displays: displays, now: now) else { return }
-        exitDisplay = displays.first { $0.insetBy(dx: -1, dy: -1).contains(position) }
+        let display = displays.first { $0.insetBy(dx: -1, dy: -1).contains(position) }
+        guard settings.edgeSwitchModifier.isSatisfied(by: event.flags) else { return }
+        if settings.disableInFullScreen, let display, FullScreenApp.covers(display) {
+            if now - lastFullScreenNotice > 10 {
+                lastFullScreenNotice = now
+                log.info("App a tutto schermo in primo piano: il bordo non porta al PC (resta la scorciatoia \(settings.hotkey.description))")
+            }
+            return
+        }
+        exitDisplay = display
         enterRemote(fraction: fraction, from: position, viaHotkey: false)
     }
 
@@ -391,6 +419,11 @@ public final class Controller {
     private func received(_ packet: Packet) {
         if packet.type == .keyboard {
             receivedKey(packet)
+            return
+        }
+        if packet.type == .awake {
+            // Qualcuno lavora su un'altra macchina: il Mac non va in stop.
+            userActivity.declare()
             return
         }
         guard case .remote(let machine) = state, packet.src == machine.id else { return }

@@ -104,6 +104,25 @@ struct EdgeDetectorTests {
         #expect(abs((back.y) - (0.75 * 1079)) <= 1)
     }
 
+    @Test func cornersAreExcludedWhenRequested() {
+        var detector = EdgeDetector(edge: .right, delay: 0, resistance: 0, cornerSize: 100)
+        // Entro 100 punti dagli angoli il bordo non porta al PC, altrove sì.
+        #expect(detector.update(position: CGPoint(x: 1919, y: 40), deltaX: 9, deltaY: 0, displays: single, now: 0) == nil)
+        #expect(detector.update(position: CGPoint(x: 1919, y: 1030), deltaX: 9, deltaY: 0, displays: single, now: 1) == nil)
+        #expect(detector.update(position: CGPoint(x: 1919, y: 540), deltaX: 9, deltaY: 0, displays: single, now: 2) != nil)
+        var top = EdgeDetector(edge: .top, delay: 0, resistance: 0, cornerSize: 100)
+        #expect(top.update(position: CGPoint(x: 1850, y: 0), deltaX: 0, deltaY: -9, displays: single, now: 0) == nil)
+        #expect(top.update(position: CGPoint(x: 960, y: 0), deltaX: 0, deltaY: -9, displays: single, now: 1) != nil)
+    }
+
+    @Test func edgeModifierChecksFlags() {
+        #expect(EdgeModifier.none.isSatisfied(by: []))
+        #expect(!EdgeModifier.control.isSatisfied(by: []))
+        #expect(EdgeModifier.control.isSatisfied(by: [.maskControl, .maskShift]))
+        #expect(!EdgeModifier.command.isSatisfied(by: .maskAlternate))
+        #expect(EdgeModifier.shift.isSatisfied(by: .maskShift))
+    }
+
     @Test func testEntryAndReturnGeometry() {
         let right = EdgeDetector(edge: .right)
         #expect(right.entryPoint(fraction: 0.5).y == 32768)
@@ -211,6 +230,27 @@ struct SettingsTests {
         changed.hotkey = Hotkey(keyCode: 0x7A, control: true, option: false, command: false, shift: true)
         try changed.save(to: url)
         #expect(try Settings.load(from: url) == changed)
+    }
+
+    @Test func newOptionsHaveMouseWithoutBordersDefaults() throws {
+        let settings = try JSONDecoder().decode(Settings.self, from: Data(#"{"remoteHost": "pc"}"#.utf8))
+        #expect(settings.keepOthersAwake)
+        #expect(!settings.blockCorners)
+        #expect(settings.disableInFullScreen)
+        #expect(settings.edgeSwitchModifier == .none)
+        #expect(settings.makeEdgeDetector().cornerSize == 0)
+        var corners = settings
+        corners.blockCorners = true
+        corners.edgeSwitchModifier = .command
+        #expect(corners.makeEdgeDetector().cornerSize == EdgeDetector.defaultCornerSize)
+        let decoded = try JSONDecoder().decode(Settings.self, from: JSONEncoder().encode(corners))
+        #expect(decoded == corners)
+    }
+
+    @Test func hotkeyNamesAreTranslatable() {
+        let hotkey = Hotkey(keyCode: 0x31, control: true, option: false, command: true, shift: false)
+        #expect(hotkey.description == "⌃⌘Space")
+        #expect(hotkey.description(keyName: { $0 == "Space" ? "Spazio" : $0 }) == "⌃⌘Spazio")
     }
 
     @Test func testMissingKeysTakeDefaults() throws {

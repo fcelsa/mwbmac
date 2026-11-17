@@ -11,6 +11,22 @@ public enum ScreenEdge: String, Codable, Sendable, CaseIterable {
     var isVertical: Bool { self == .left || self == .right }
 }
 
+/// Modificatore da tenere premuto perché il bordo porti al PC.
+public enum EdgeModifier: String, Codable, Sendable, CaseIterable {
+    case none, control, option, command, shift
+
+    /// Vero se i modificatori premuti soddisfano la richiesta.
+    public func isSatisfied(by flags: CGEventFlags) -> Bool {
+        switch self {
+        case .none: return true
+        case .control: return flags.contains(.maskControl)
+        case .option: return flags.contains(.maskAlternate)
+        case .command: return flags.contains(.maskCommand)
+        case .shift: return flags.contains(.maskShift)
+        }
+    }
+}
+
 public struct EdgeDetector: Sendable {
     public var edge: ScreenEdge
     /// Tempo minimo di spinta continua contro il bordo prima del cambio.
@@ -19,6 +35,11 @@ public struct EdgeDetector: Sendable {
     public var resistance: Double
     /// Porzione attiva del bordo (0…1), per schermi non allineati.
     public var activeRange: ClosedRange<Double>
+    /// Lato in punti della zona d'angolo esclusa, lungo il bordo (0 = nessuna esclusione).
+    public var cornerSize: Double
+
+    /// Come Mouse Without Borders: 100 pixel attorno a ogni angolo dei display.
+    public static let defaultCornerSize = 100.0
 
     /// Dopo questa pausa senza eventi sul bordo la spinta riparte da zero.
     static let pushTimeout: TimeInterval = 0.3
@@ -31,11 +52,12 @@ public struct EdgeDetector: Sendable {
     private var armed = true
 
     public init(edge: ScreenEdge, delay: TimeInterval = 0.15, resistance: Double = 30,
-                activeRange: ClosedRange<Double> = 0...1) {
+                activeRange: ClosedRange<Double> = 0...1, cornerSize: Double = 0) {
         self.edge = edge
         self.delay = delay
         self.resistance = resistance
         self.activeRange = activeRange
+        self.cornerSize = cornerSize
     }
 
     /// Dopo un ritorno dal PC il cursore riappare a ridosso del bordo: finché non se ne
@@ -61,7 +83,7 @@ public struct EdgeDetector: Sendable {
         let fraction = edge.isVertical
             ? (position.y - display.minY) / max(display.height, 1)
             : (position.x - display.minX) / max(display.width, 1)
-        guard activeRange.contains(fraction) else {
+        guard activeRange.contains(fraction), !isInCorner(position, of: display) else {
             clearPush()
             return nil
         }
@@ -97,6 +119,15 @@ public struct EdgeDetector: Sendable {
     private mutating func clearPush() {
         pushStart = nil
         pushed = 0
+    }
+
+    /// Vero se il punto, lungo il bordo, è a meno di `cornerSize` da un angolo del display.
+    private func isInCorner(_ p: CGPoint, of display: CGRect) -> Bool {
+        guard cornerSize > 0 else { return false }
+        let distance = edge.isVertical
+            ? min(p.y - display.minY, display.maxY - 1 - p.y)
+            : min(p.x - display.minX, display.maxX - 1 - p.x)
+        return distance < cornerSize
     }
 
     private func isAtEdge(_ p: CGPoint, of display: CGRect) -> Bool {

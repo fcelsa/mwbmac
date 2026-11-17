@@ -23,19 +23,25 @@ public struct Hotkey: Codable, Equatable, Sendable {
         self.shift = shift
     }
 
-    public var description: String {
+    public var description: String { description(keyName: { $0 }) }
+
+    /// Forma leggibile, come "⌃⌥⌘Esc". `keyName` traduce i nomi dei tasti (in inglese)
+    /// nella lingua dell'interfaccia.
+    public func description(keyName: (String) -> String) -> String {
         var parts: [String] = []
         if control { parts.append("⌃") }
         if option { parts.append("⌥") }
         if shift { parts.append("⇧") }
         if command { parts.append("⌘") }
-        parts.append(Hotkey.keyNames.first { $0.keyCode == keyCode }?.name ?? "tasto 0x" + String(keyCode, radix: 16))
+        parts.append(Hotkey.keyNames.first { $0.keyCode == keyCode }.map { keyName($0.name) }
+            ?? "0x" + String(keyCode, radix: 16))
         return parts.joined()
     }
 
-    /// Tasti proposti dall'interfaccia per la scorciatoia.
+    /// Tasti proposti dall'interfaccia per la scorciatoia; i nomi sono in inglese e
+    /// l'app li traduce.
     public static let keyNames: [(keyCode: UInt16, name: String)] = [
-        (0x35, "Esc"), (0x31, "Spazio"), (0x24, "Invio"), (0x30, "Tab"),
+        (0x35, "Esc"), (0x31, "Space"), (0x24, "Return"), (0x30, "Tab"),
         (0x7A, "F1"), (0x78, "F2"), (0x63, "F3"), (0x76, "F4"), (0x60, "F5"), (0x61, "F6"),
         (0x62, "F7"), (0x64, "F8"), (0x65, "F9"), (0x6D, "F10"), (0x67, "F11"), (0x6F, "F12"),
     ]
@@ -59,6 +65,17 @@ public struct Settings: Codable, Equatable, Sendable {
     /// Porzione attiva del bordo (0…1), per schermi non allineati.
     public var edgeStart: Double
     public var edgeEnd: Double
+    /// Niente passaggio al PC dagli angoli dei display (angoli attivi, Centro notifiche).
+    /// Come "Block mouse at screen corners" di Mouse Without Borders.
+    public var blockCorners: Bool
+    /// Niente passaggio al PC dal bordo mentre l'app in primo piano è a tutto schermo
+    /// (giochi, presentazioni, video). Come l'opzione omonima di PowerToys.
+    public var disableInFullScreen: Bool
+    /// Modificatore da tenere premuto perché il bordo porti al PC (Easy Mouse "Ctrl/Shift").
+    public var edgeSwitchModifier: EdgeModifier
+    /// Mentre si usa il Mac il PC non va in stop né avvia il salvaschermo: pacchetti
+    /// `Awake` come "Block screen saver on other machines" di Mouse Without Borders.
+    public var keepOthersAwake: Bool
 
     public var windowsLayout: WindowsLayout
     public var commandKey: ModifierTarget
@@ -86,6 +103,10 @@ public struct Settings: Codable, Equatable, Sendable {
         edgeResistancePx = 30
         edgeStart = 0
         edgeEnd = 1
+        blockCorners = false
+        disableInFullScreen = true
+        edgeSwitchModifier = .none
+        keepOthersAwake = true
         windowsLayout = .italian
         commandKey = .control
         controlKey = .windows
@@ -113,6 +134,10 @@ public struct Settings: Codable, Equatable, Sendable {
         edgeResistancePx = try c.decodeIfPresent(Int.self, forKey: .edgeResistancePx) ?? edgeResistancePx
         edgeStart = try c.decodeIfPresent(Double.self, forKey: .edgeStart) ?? edgeStart
         edgeEnd = try c.decodeIfPresent(Double.self, forKey: .edgeEnd) ?? edgeEnd
+        blockCorners = try c.decodeIfPresent(Bool.self, forKey: .blockCorners) ?? blockCorners
+        disableInFullScreen = try c.decodeIfPresent(Bool.self, forKey: .disableInFullScreen) ?? disableInFullScreen
+        edgeSwitchModifier = try c.decodeIfPresent(EdgeModifier.self, forKey: .edgeSwitchModifier) ?? edgeSwitchModifier
+        keepOthersAwake = try c.decodeIfPresent(Bool.self, forKey: .keepOthersAwake) ?? keepOthersAwake
         windowsLayout = try c.decodeIfPresent(WindowsLayout.self, forKey: .windowsLayout) ?? windowsLayout
         commandKey = try c.decodeIfPresent(ModifierTarget.self, forKey: .commandKey) ?? commandKey
         controlKey = try c.decodeIfPresent(ModifierTarget.self, forKey: .controlKey) ?? controlKey
@@ -133,7 +158,8 @@ public struct Settings: Codable, Equatable, Sendable {
 
     public func makeEdgeDetector() -> EdgeDetector {
         EdgeDetector(edge: edge, delay: Double(max(switchDelayMs, 0)) / 1000,
-                     resistance: Double(max(edgeResistancePx, 0)), activeRange: activeRange)
+                     resistance: Double(max(edgeResistancePx, 0)), activeRange: activeRange,
+                     cornerSize: blockCorners ? EdgeDetector.defaultCornerSize : 0)
     }
 
     public func makeKeyMap(isISOKeyboard: Bool) -> KeyMap {

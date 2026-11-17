@@ -449,6 +449,17 @@ public final class Session: @unchecked Sendable {
         broadcast(Packet(type: .heartbeat, des: MachineID.all, machineName: configuration.localName))
     }
 
+    /// `Common.SendAwakeBeat`: al posto di un heartbeat, segnala alle altre macchine che
+    /// qui c'è qualcuno al lavoro; chi lo riceve evita salvaschermo e stop
+    /// (`Common.HumanBeingDetected`). Sicuro da qualsiasi thread.
+    public func sendAwake() {
+        queue.async { [self] in
+            guard running else { return }
+            lastHeartbeat = Date()
+            broadcast(Packet(type: .awake, des: MachineID.all, machineName: configuration.localName))
+        }
+    }
+
     // MARK: Ricezione
 
     private func received(_ packet: Packet, from peer: PeerConnection) {
