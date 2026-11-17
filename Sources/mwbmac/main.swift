@@ -177,6 +177,57 @@ func installExitHandlers(duration: TimeInterval?, cleanup: @escaping () -> Void)
     return sources
 }
 
+/// Sessione e controller di `run`, ricreati al risveglio del Mac.
+final class Runner {
+    private let settings: Settings
+    private let options: Options
+    private let log: Log
+    private var session: Session?
+    private var controller: Controller?
+    private var suspendedForSleep = false
+
+    init(settings: Settings, options: Options, log: Log) {
+        self.settings = settings
+        self.options = options
+        self.log = log
+    }
+
+    func start() throws {
+        let session = makeSession(settings: settings, options: options, log: log)
+        let controller = Controller(settings: settings, session: session, log: log)
+        try controller.start()
+        session.start()
+        self.session = session
+        self.controller = controller
+    }
+
+    func stop() {
+        controller?.stop()
+        session?.stop()
+        controller = nil
+        session = nil
+    }
+
+    /// Come l'app: ByeBye prima dello stop, nuova sessione al risveglio.
+    func observeSleep() -> [NSObjectProtocol] {
+        let center = NSWorkspace.shared.notificationCenter
+        return [
+            center.addObserver(forName: NSWorkspace.willSleepNotification, object: nil, queue: .main) { [self] _ in
+                guard session != nil else { return }
+                log.info("Il Mac va in stop: chiudo la sessione con il PC")
+                suspendedForSleep = true
+                stop()
+            },
+            center.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [self] _ in
+                guard suspendedForSleep else { return }
+                suspendedForSleep = false
+                log.info("Il Mac si è risvegliato: riapro la sessione con il PC")
+                do { try start() } catch { log.info("Riavvio dopo il risveglio fallito: \(error)") }
+            },
+        ]
+    }
+}
+
 let options = parseOptions()
 let log = Log(protocolEnabled: options.logProtocol, debugEnabled: options.verbose)
 
@@ -224,26 +275,22 @@ case "run":
         viene lanciato mwbmac (Terminale, iTerm, …), poi riavviarla e rilanciare il comando.
         """)
     }
-    let session = makeSession(settings: settings, options: options, log: log)
-    let controller = Controller(settings: settings, session: session, log: log)
+    let runner = Runner(settings: settings, options: options, log: log)
     do {
-        try controller.start()
+        try runner.start()
     } catch {
         fail("\(error)")
     }
     log.info("mwbmac: \"\(settings.localName)\" → \(settings.remoteHost), PC oltre il bordo \(settings.edge.rawValue), "
         + "ritardo \(settings.switchDelayMs) ms, resistenza \(settings.edgeResistancePx) px")
     log.info("Scorciatoia di emergenza / cambio manuale: \(settings.hotkey.description)")
-    session.start()
-    let signals = installExitHandlers(duration: options.duration) {
-        controller.stop()
-        session.stop()
-    }
+    let signals = installExitHandlers(duration: options.duration) { runner.stop() }
+    let sleepObservers = runner.observeSleep()
     // Serve un vero ciclo di eventi AppKit: per nascondere e bloccare il cursore il
     // processo deve poter passare in primo piano (vedi `LocalCursor`).
     let application = NSApplication.shared
     application.setActivationPolicy(.accessory)
-    withExtendedLifetime(signals) { application.run() }
+    withExtendedLifetime((signals, sleepObservers)) { application.run() }
 
 default:
     printUsage()

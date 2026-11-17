@@ -42,6 +42,12 @@ final class AppModel: ObservableObject {
 
     private var session: Session?
     private var controller: Controller?
+    private var log: Log?
+    /// La sessione è stata chiusa per lo stop del Mac e va riaperta al risveglio.
+    private var suspendedForSleep = false
+    /// Chiave dell'ultima sessione, solo in memoria, per riaprirla al risveglio.
+    private var keyForResume: String?
+    private var sleepObservers: [NSObjectProtocol] = []
     private var permissionTimer: Timer?
     private var promptedForPermissions = false
     private static let enabledKey = "enabled"
@@ -53,6 +59,33 @@ final class AppModel: ObservableObject {
         settings = (try? Settings.load()) ?? Settings()
         UserDefaults.standard.register(defaults: [AppModel.enabledKey: true])
         enabled = UserDefaults.standard.bool(forKey: AppModel.enabledKey)
+        observeSleep()
+    }
+
+    deinit {
+        sleepObservers.forEach { NSWorkspace.shared.notificationCenter.removeObserver($0) }
+    }
+
+    // MARK: Stop e risveglio
+
+    /// Prima dello stop il controllo torna al Mac e il PC riceve `ByeBye`, così sa subito
+    /// che il Mac non c'è più (`Common.ProcessByeByeMessage`) invece di accorgersene allo
+    /// scadere degli heartbeat. Al risveglio la sessione riparte e si ricollega appena la
+    /// rete è disponibile (la riconnessione ritenta ogni pochi secondi).
+    private func observeSleep() {
+        let center = NSWorkspace.shared.notificationCenter
+        sleepObservers.append(center.addObserver(forName: NSWorkspace.willSleepNotification, object: nil, queue: .main) { [weak self] _ in
+            guard let self, self.session != nil else { return }
+            self.log?.info("Il Mac va in stop: chiudo la sessione con il PC")
+            self.suspendedForSleep = true
+            self.stop()
+        })
+        sleepObservers.append(center.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
+            guard let self, self.suspendedForSleep else { return }
+            self.suspendedForSleep = false
+            self.start(resumingFromSleep: true)
+            self.log?.info("Il Mac si è risvegliato: riapro la sessione con il PC")
+        })
     }
 
     var isRemote: Bool {
@@ -70,6 +103,7 @@ final class AppModel: ObservableObject {
     // MARK: Azioni
 
     func setEnabled(_ value: Bool) {
+        suspendedForSleep = false
         enabled = value
         UserDefaults.standard.set(value, forKey: AppModel.enabledKey)
         restart()
@@ -104,10 +138,15 @@ final class AppModel: ObservableObject {
         session?.stop()
         controller = nil
         session = nil
+        log = nil
         status = .disabled
     }
 
     func start() {
+        start(resumingFromSleep: false)
+    }
+
+    private func start(resumingFromSleep: Bool) {
         guard enabled else {
             status = .disabled
             return
@@ -133,10 +172,16 @@ final class AppModel: ObservableObject {
             key = stored
             hasSecurityKey = true
         } catch {
-            lastMessage = "\(error)"
-            status = .missingKey
-            return
+            // Con "blocca il portachiavi dopo lo stop" il Keychain può essere ancora chiuso
+            // al risveglio: si riusa la chiave della sessione appena chiusa.
+            guard resumingFromSleep, let previous = keyForResume else {
+                lastMessage = "\(error)"
+                status = .missingKey
+                return
+            }
+            key = previous
         }
+        keyForResume = key
 
         // `defaults write local.mwbmac.host verbose -bool true` attiva i messaggi di diagnosi.
         let log = Log(debugEnabled: UserDefaults.standard.bool(forKey: "verbose"))
@@ -167,6 +212,7 @@ final class AppModel: ObservableObject {
         }
         self.session = session
         self.controller = controller
+        self.log = log
         status = .connecting
         session.start()
     }
