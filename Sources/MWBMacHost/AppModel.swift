@@ -22,14 +22,14 @@ final class AppModel: ObservableObject {
 
         var text: String {
             switch self {
-            case .disabled: return "Disattivato"
-            case .missingHost: return "Nome del PC non configurato"
-            case .missingKey: return "Security key non impostata"
-            case .missingPermissions: return "Permessi mancanti"
-            case .invalidKey: return "Security key diversa da quella del PC"
-            case .connecting: return "In attesa del PC…"
-            case .connected(let name): return "Connesso a \(name)"
-            case .remote(let name): return "Controllo su \(name)"
+            case .disabled: return L("Off")
+            case .missingHost: return L("PC name not set")
+            case .missingKey: return L("Security key not set")
+            case .missingPermissions: return L("Permissions missing")
+            case .invalidKey: return L("Security key doesn't match the PC")
+            case .connecting: return L("Waiting for the PC…")
+            case .connected(let name): return L("Connected to %@", name)
+            case .remote(let name): return L("Controlling %@", name)
             }
         }
     }
@@ -270,7 +270,7 @@ final class AppModel: ObservableObject {
                 try SMAppService.mainApp.unregister()
             }
         } catch {
-            lastMessage = "Avvio al login: \(error.localizedDescription)"
+            lastMessage = L("Open at login: %@", error.localizedDescription)
         }
         objectWillChange.send()
     }

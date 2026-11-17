@@ -34,6 +34,9 @@ BUILD_NUMBER="$(git rev-list --count HEAD 2>/dev/null || echo 1)"
 IDENTITY="${MWB_SIGN_IDENTITY:-mwbmac local signing}"
 APP="build/$APP_NAME.app"
 
+echo "==> Traduzioni"
+scripts/check-localization.sh
+
 echo "==> Compilazione ($CONFIGURATION)"
 # Una sola compilazione per app e riga di comando. Con i soli Command Line Tools il linker
 # segnala percorsi di ricerca di Xcode che non esistono ("search path ... not found"):
@@ -48,6 +51,10 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN_DIR/$EXECUTABLE" "$APP/Contents/MacOS/$EXECUTABLE"
 # Lo strumento da riga di comando viaggia nel bundle (set-key, probe, diagnosi).
 cp "$BIN_DIR/mwbmac" "$APP/Contents/MacOS/mwbmac"
+# Una cartella .lproj per lingua: macOS sceglie quella delle preferenze di sistema,
+# altrimenti l'inglese (CFBundleDevelopmentRegion).
+cp -R Sources/MWBMacHost/Resources/*.lproj "$APP/Contents/Resources/"
+LOCALIZATIONS="$(for dir in Sources/MWBMacHost/Resources/*.lproj; do printf '<string>%s</string>' "$(basename "$dir" .lproj)"; done)"
 
 cat > "$APP/Contents/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -62,13 +69,14 @@ cat > "$APP/Contents/Info.plist" <<EOF
     <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
     <key>CFBundleShortVersionString</key><string>$VERSION</string>
     <key>CFBundleVersion</key><string>$BUILD_NUMBER</string>
-    <key>CFBundleDevelopmentRegion</key><string>it</string>
+    <key>CFBundleDevelopmentRegion</key><string>en</string>
+    <key>CFBundleLocalizations</key><array>$LOCALIZATIONS</array>
     <key>LSMinimumSystemVersion</key><string>13.0</string>
     <key>LSUIElement</key><true/>
     <key>NSHighResolutionCapable</key><true/>
     <key>NSLocalNetworkUsageDescription</key>
-    <string>MWB Mac Host si collega al PC Windows sulla rete locale per inviargli mouse e tastiera tramite Mouse Without Borders.</string>
-    <key>NSHumanReadableCopyright</key><string>Client macOS per PowerToys Mouse Without Borders</string>
+    <string>MWB Mac Host connects to the Windows PC on the local network to send it the keyboard and mouse through Mouse Without Borders.</string>
+    <key>NSHumanReadableCopyright</key><string>macOS client for PowerToys Mouse Without Borders</string>
 </dict>
 </plist>
 EOF

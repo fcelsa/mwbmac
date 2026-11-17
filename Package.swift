@@ -17,7 +17,10 @@ let package = Package(
         .target(name: "MWBEdgeLogic", dependencies: ["MWBProtocol", "MWBTransport", "MWBInputCapture"]),
         .executableTarget(name: "mwbmac", dependencies: ["MWBProtocol", "MWBTransport", "MWBInputCapture", "MWBEdgeLogic"]),
         // App da barra menu; il bundle .app si costruisce con scripts/build-app.sh.
-        .executableTarget(name: "MWBMacHost", dependencies: ["MWBProtocol", "MWBTransport", "MWBInputCapture", "MWBEdgeLogic"]),
+        // Le traduzioni (Resources/*.lproj) non passano da SwiftPM: build-app.sh le copia
+        // in Contents/Resources, dove Bundle.main le trova come in ogni app macOS.
+        .executableTarget(name: "MWBMacHost", dependencies: ["MWBProtocol", "MWBTransport", "MWBInputCapture", "MWBEdgeLogic"],
+                          exclude: ["Resources"]),
         .testTarget(name: "MWBProtocolTests", dependencies: ["MWBProtocol"]),
         .testTarget(name: "MWBTransportTests", dependencies: ["MWBTransport", "MWBProtocol"]),
         .testTarget(name: "MWBInputCaptureTests", dependencies: ["MWBInputCapture"]),

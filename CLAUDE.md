@@ -133,6 +133,20 @@ ricollega in meno di un secondo e accetta subito il mouse remoto. Il `Controller
 se cade il PC controllato, resta in remoto per `reconnectGrace` (3 s) e prosegue se la
 macchina si ricollega con lo stesso nome, come fa PowerToys (`SetMachineDisconnected`).
 
+Interfaccia localizzata (`Sources/MWBMacHost/Localization.swift`): ogni testo dell'app passa
+da `L("testo inglese", argomenti…)`, che legge `Bundle.main` (le cartelle `.lproj` sono
+escluse da SwiftPM e copiate nel bundle da `build-app.sh`); nelle viste SwiftUI si passa
+sempre la `String` di `L(...)`. Ogni nuovo testo va tradotto in
+`Resources/it.lproj/Localizable.strings`: `scripts/check-localization.sh` lo verifica.
+Log e riga di comando restano in italiano.
+
+Stop del Mac: `AppModel` (e `Runner` in `mwbmac run`) chiude la sessione a
+`willSleepNotification` (ByeBye al PC) e la riapre a `didWakeNotification`. Opzioni del
+bordo come in PowerToys: `blockCorners` (100 punti), `disableInFullScreen` (finestra di
+livello 0 dell'app in primo piano che copre il display, via `CGWindowListCopyWindowInfo`),
+`edgeSwitchModifier`; `keepOthersAwake` invia `Awake` ogni 60 s se c'è stato input, e un
+`Awake` ricevuto diventa `IOPMAssertionDeclareUserActivity` (non con schermo bloccato o spento).
+
 Mai provare la connessione al PC con una chiave sbagliata: dopo dieci pacchetti non
 validi PowerToys marca `InvalidKeyFound` e smette di aprire connessioni client.
 

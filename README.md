@@ -83,6 +83,25 @@ schermata di blocco) Mouse Without Borders chiude tutte le connessioni e si rico
 meno di un secondo: il Mac resta in controllo del PC per 3 s in attesa che si ricolleghi,
 come fa PowerToys fra due PC, e torna al Mac solo se il PC non ricompare.
 
+## Stop e risveglio, salvaschermo
+
+- **Il Mac va in stop**: il controllo torna al Mac e il PC riceve subito `ByeBye`; al
+  risveglio la sessione riparte e si ricollega appena la rete è disponibile.
+- **Tenere svegli gli altri computer** (`keepOthersAwake`, come "Block screen saver on
+  other machines" di Mouse Without Borders): mentre lavori sul Mac, un pacchetto `Awake` al
+  minuto impedisce al PC di andare in stop; se sul PC è attiva la stessa opzione, l'attività
+  sul PC tiene sveglio il Mac (ma non riaccende uno schermo spento e non tocca la schermata
+  di blocco).
+
+## Lingue
+
+L'interfaccia dell'app segue la lingua di sistema: italiano e inglese, con l'inglese come
+ripiego. Le traduzioni stanno in `Sources/MWBMacHost/Resources/<lingua>.lproj`, con il
+testo inglese come chiave; per aggiungere una lingua basta una nuova cartella `.lproj` con
+`Localizable.strings` e `InfoPlist.strings`. `scripts/check-localization.sh` (eseguito anche
+da `build-app.sh`) segnala le traduzioni mancanti. Messaggi di log e riga di comando restano
+in italiano.
+
 ## Compilazione e test
 
 ```bash
@@ -149,6 +168,10 @@ manualmente al PC). In stato remoto l'input locale è soppresso: tenerla a mente
 | `switchDelayMs` | ritardo di spostamento: spinta continua minima sul bordo | 150 |
 | `edgeResistancePx` | resistenza: pixel di spinta da accumulare | 30 |
 | `edgeStart`, `edgeEnd` | porzione attiva del bordo (0…1) per schermi non allineati | 0, 1 |
+| `blockCorners` | gli angoli dei display (100 punti) non portano al PC | `false` |
+| `disableInFullScreen` | niente passaggio dal bordo con un'app a tutto schermo in primo piano | `true` |
+| `edgeSwitchModifier` | tasto da tenere premuto per passare dal bordo: `none` `control` `option` `command` `shift` | `none` |
+| `keepOthersAwake` | mentre si usa il Mac il PC non va in stop né avvia il salvaschermo | `true` |
 | `windowsLayout` | layout di tastiera del PC: `it` o `us` | `it` |
 | `commandKey`, `controlKey`, `optionKey` | cosa diventano ⌘ ⌃ ⌥: `ctrl` `win` `alt` | `ctrl`, `win`, `alt` |
 | `rightOptionIsAltGr` | ⌥ destro come AltGr (`@ # [ ] { }` su layout italiano) | `true` |

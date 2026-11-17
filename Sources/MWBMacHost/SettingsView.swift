@@ -1,9 +1,34 @@
-// Finestra Impostazioni. Le modifiche restano in una bozza finché non si preme "Applica":
-// applicarle riavvia la sessione con il PC.
+// Finestra Impostazioni: barra laterale con le sezioni, a destra il modulo della sezione
+// scelta. Le modifiche restano in una bozza finché non si preme "Applica": applicarle
+// riavvia la sessione con il PC. Tutti i testi passano da `L(...)` (vedi Localization.swift).
 
 import MWBEdgeLogic
 import MWBInputCapture
 import SwiftUI
+
+enum SettingsPane: String, CaseIterable, Identifiable {
+    case connection, edge, keyboard, sharing
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .connection: return L("Connection")
+        case .edge: return L("Screen Edge")
+        case .keyboard: return L("Keyboard & Mouse")
+        case .sharing: return L("Sharing & Lock")
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .connection: return "network"
+        case .edge: return "rectangle.righthalf.inset.filled.arrow.right"
+        case .keyboard: return "keyboard"
+        case .sharing: return "lock.rectangle.stack"
+        }
+    }
+}
 
 /// Bozza delle impostazioni in modifica. È un oggetto osservabile e non `@State` perché
 /// nell'SDK corrente `@State` è una macro il cui plugin manca nei Command Line Tools.
@@ -13,10 +38,17 @@ final class SettingsDraft: ObservableObject {
     @Published var newKey = ""
     @Published var message = ""
     @Published var messageIsError = false
+    @Published var pane: SettingsPane? = .connection
 
     init(settings: MWBEdgeLogic.Settings) {
         self.settings = settings
         self.basePortText = String(settings.basePort)
+    }
+
+    func reset(to settings: MWBEdgeLogic.Settings) {
+        self.settings = settings
+        basePortText = String(settings.basePort)
+        message = ""
     }
 }
 
@@ -25,116 +57,187 @@ struct SettingsView: View {
     @ObservedObject var state: SettingsDraft
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            TabView {
-                connectionTab.tabItem { Label("Connessione", systemImage: "network") }
-                edgeTab.tabItem { Label("Bordo", systemImage: "rectangle.righthalf.inset.filled.arrow.right") }
-                keyboardTab.tabItem { Label("Tastiera", systemImage: "keyboard") }
+        HStack(spacing: 0) {
+            List(SettingsPane.allCases, selection: $state.pane) { pane in
+                Label(pane.title, systemImage: pane.symbol).tag(pane)
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 12)
+            .listStyle(.sidebar)
+            .frame(width: 200)
 
-            Divider().padding(.top, 12)
-            HStack {
-                Circle().fill(statusColor).frame(width: 8, height: 8)
-                Text(model.status.text).foregroundStyle(.secondary)
-                Spacer()
-                if !state.message.isEmpty {
-                    Text(state.message).foregroundStyle(state.messageIsError ? .red : .secondary).lineLimit(2)
+            Divider()
+
+            VStack(spacing: 0) {
+                Group {
+                    switch state.pane ?? .connection {
+                    case .connection: connectionPane
+                    case .edge: edgePane
+                    case .keyboard: keyboardPane
+                    case .sharing: sharingPane
+                    }
                 }
-                Button("Applica") { apply() }
-                    .keyboardShortcut(.defaultAction)
-                    .disabled(!hasChanges)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                Divider()
+                footer
             }
-            .padding(16)
         }
-        .frame(width: 520, height: 470)
+        .frame(width: 740, height: 580)
     }
 
-    // MARK: Schede
-
-    private var connectionTab: some View {
-        Form {
-            Section("PC con Mouse Without Borders") {
-                TextField("Nome o indirizzo del PC", text: $state.settings.remoteHost)
-                TextField("Porta base", text: $state.basePortText)
-                    .help("MWB usa la porta base per gli appunti e la successiva per i messaggi (predefinita 15100)")
-                TextField("Nome di questo Mac", text: $state.settings.localName)
-                    .help("Deve coincidere con il nome inserito nella matrice di PowerToys e deve essere risolvibile dal PC")
+    private var footer: some View {
+        HStack(spacing: 10) {
+            Circle().fill(statusColor).frame(width: 8, height: 8)
+            Text(model.status.text).foregroundStyle(.secondary).lineLimit(1)
+            Spacer()
+            if !state.message.isEmpty {
+                Text(state.message)
+                    .foregroundStyle(state.messageIsError ? .red : .secondary)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.trailing)
             }
-            Section("Security key") {
-                LabeledContent("Nel Keychain", value: model.hasSecurityKey ? "presente" : "assente")
+            Button(L("Revert")) { state.reset(to: model.settings) }
+                .disabled(!hasChanges)
+            Button(L("Apply")) { apply() }
+                .keyboardShortcut(.defaultAction)
+                .disabled(!hasChanges)
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 12)
+    }
+
+    // MARK: Connessione
+
+    private var connectionPane: some View {
+        Form {
+            Section {
+                TextField(L("PC name or address"), text: $state.settings.remoteHost, prompt: Text(L("e.g. MYPC or 192.168.1.20")))
+                TextField(L("This Mac's name"), text: $state.settings.localName)
+                TextField(L("Base port"), text: $state.basePortText)
+            } header: {
+                Text(L("PC with Mouse Without Borders"))
+            } footer: {
+                note(L("In PowerToys, add this Mac's name to the device layout; the PC must be able to resolve it on the network. Mouse Without Borders uses the base port for the clipboard and the next one for messages (default 15100)."))
+            }
+
+            Section {
+                LabeledContent(L("Keychain")) {
+                    if model.hasSecurityKey {
+                        Label(L("Stored"), systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+                    } else {
+                        Label(L("Missing"), systemImage: "exclamationmark.circle.fill").foregroundStyle(.orange)
+                    }
+                }
                 HStack {
-                    SecureField("Nuova security key", text: $state.newKey)
-                    Button("Salva") { saveKey() }.disabled(state.newKey.isEmpty)
+                    SecureField(L("New security key"), text: $state.newKey)
+                    Button(L("Save")) { saveKey() }.disabled(state.newKey.isEmpty)
                 }
-                Text("La chiave è quella mostrata da PowerToys → Mouse Without Borders. Viene conservata solo nel Keychain.")
-                    .font(.caption).foregroundStyle(.secondary)
+            } header: {
+                Text(L("Security key"))
+            } footer: {
+                note(L("The key shown in PowerToys → Mouse Without Borders on the PC. It is stored only in the Keychain."))
             }
-            Section("Appunti") {
-                Toggle("Condividi gli appunti con il PC (testo e immagini)", isOn: $state.settings.shareClipboard)
-            }
-            Section("Blocco schermo") {
-                Toggle("Blocca insieme Mac e PC", isOn: $state.settings.syncLock)
-                TextField("Scorciatoia \"blocca tutte le macchine\" del PC", text: $state.settings.lockAllShortcut)
-                    .disabled(!state.settings.syncLock)
-                Text("⌃⌘Q sul Mac blocca anche il PC; Win+L inviato al PC o la scorciatoia premuta due volte sul PC bloccano anche il Mac. Deve essere quella impostata in PowerToys → Mouse Without Borders sul PC, nella forma Win+Ctrl+Alt+L.")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
-            if model.status == .missingPermissions {
-                Section("Permessi") {
-                    permissionRow("Accessibilità", granted: model.hasAccessibility, pane: "Privacy_Accessibility")
-                    permissionRow("Monitoraggio input", granted: model.hasInputMonitoring, pane: "Privacy_ListenEvent")
-                }
+
+            Section {
+                permissionRow(L("Accessibility"), granted: model.hasAccessibility, pane: "Privacy_Accessibility")
+                permissionRow(L("Input Monitoring"), granted: model.hasInputMonitoring, pane: "Privacy_ListenEvent")
+            } header: {
+                Text(L("Permissions"))
+            } footer: {
+                note(L("Needed to read the keyboard and mouse and send them to the PC."))
             }
         }
         .formStyle(.grouped)
     }
 
-    private var edgeTab: some View {
+    // MARK: Bordo dello schermo
+
+    private var edgePane: some View {
         Form {
-            Section("Posizione del PC") {
-                Picker("Il PC si trova oltre il bordo", selection: $state.settings.edge) {
-                    Text("sinistro").tag(ScreenEdge.left)
-                    Text("destro").tag(ScreenEdge.right)
-                    Text("superiore").tag(ScreenEdge.top)
-                    Text("inferiore").tag(ScreenEdge.bottom)
+            Section {
+                EdgeDiagram(edge: state.settings.edge, range: state.settings.activeRange,
+                            blockCorners: state.settings.blockCorners)
+                    .padding(.vertical, 4)
+                Picker(L("The PC is on the"), selection: $state.settings.edge) {
+                    Text(L("Left")).tag(ScreenEdge.left)
+                    Text(L("Right")).tag(ScreenEdge.right)
+                    Text(L("Top")).tag(ScreenEdge.top)
+                    Text(L("Bottom")).tag(ScreenEdge.bottom)
                 }
-                Text("Nella matrice di PowerToys il Mac deve stare dal lato opposto, altrimenti il cursore non torna indietro.")
-                    .font(.caption).foregroundStyle(.secondary)
+                .pickerStyle(.segmented)
+            } header: {
+                Text(L("Position of the PC"))
+            } footer: {
+                note(L("In the PowerToys device layout, place the Mac on the opposite side of the PC, otherwise the cursor can't come back."))
             }
-            Section("Cambio macchina") {
-                Stepper("Ritardo di spostamento: \(state.settings.switchDelayMs) ms", value: $state.settings.switchDelayMs, in: 0...2000, step: 50)
-                Stepper("Resistenza sul bordo: \(state.settings.edgeResistancePx) px", value: $state.settings.edgeResistancePx, in: 0...1000, step: 10)
+
+            Section {
+                LabeledContent(L("From %ld%%", percent(state.settings.edgeStart))) {
+                    Slider(value: rangeStart, in: 0...0.95, step: 0.05)
+                }
+                LabeledContent(L("To %ld%%", percent(state.settings.edgeEnd))) {
+                    Slider(value: rangeEnd, in: 0.05...1, step: 0.05)
+                }
+                optionToggle(L("Ignore screen corners"),
+                             detail: L("Pushing into a corner doesn't switch to the PC, so hot corners and Notification Center keep working."),
+                             isOn: $state.settings.blockCorners)
+            } header: {
+                Text(L("Part of the edge that leads to the PC"))
+            } footer: {
+                note(state.settings.edge == .left || state.settings.edge == .right
+                     ? L("0% is the top of the screen, 100% the bottom. Narrow it when the PC screen is smaller or not aligned with the Mac, so the cursor crosses only where the two screens meet.")
+                     : L("0% is the left end of the screen, 100% the right end. Narrow it when the PC screen is smaller or not aligned with the Mac, so the cursor crosses only where the two screens meet."))
             }
-            Section("Porzione attiva del bordo") {
-                LabeledContent("Inizio: \(Int(state.settings.edgeStart * 100))%") {
-                    Slider(value: $state.settings.edgeStart, in: 0...1, step: 0.05)
+
+            Section {
+                Stepper(L("Delay: %ld ms", state.settings.switchDelayMs),
+                        value: $state.settings.switchDelayMs, in: 0...2000, step: 50)
+                Stepper(L("Resistance: %ld px", state.settings.edgeResistancePx),
+                        value: $state.settings.edgeResistancePx, in: 0...1000, step: 10)
+                Picker(L("Only while holding"), selection: $state.settings.edgeSwitchModifier) {
+                    Text(L("No key")).tag(EdgeModifier.none)
+                    Text(L("⌃ Control")).tag(EdgeModifier.control)
+                    Text(L("⌥ Option")).tag(EdgeModifier.option)
+                    Text(L("⌘ Command")).tag(EdgeModifier.command)
+                    Text(L("⇧ Shift")).tag(EdgeModifier.shift)
                 }
-                LabeledContent("Fine: \(Int(state.settings.edgeEnd * 100))%") {
-                    Slider(value: $state.settings.edgeEnd, in: 0...1, step: 0.05)
-                }
-                Text("Per schermi non allineati: solo questo tratto del bordo porta al PC.")
-                    .font(.caption).foregroundStyle(.secondary)
+                optionToggle(L("Not while an app is full screen"),
+                             detail: L("Games, presentations and videos keep the cursor on the Mac. The emergency shortcut still switches."),
+                             isOn: $state.settings.disableInFullScreen)
+            } header: {
+                Text(L("Switching to the PC"))
+            } footer: {
+                note(L("The cursor moves to the PC after pushing against the edge for the delay time and for the resistance distance; both avoid accidental switches."))
             }
         }
         .formStyle(.grouped)
     }
 
-    private var keyboardTab: some View {
+    // MARK: Tastiera e mouse
+
+    private var keyboardPane: some View {
         Form {
-            Section("Tastiera del PC") {
-                Picker("Layout di Windows", selection: $state.settings.windowsLayout) {
-                    Text("Italiano").tag(WindowsLayout.italian)
-                    Text("Americano").tag(WindowsLayout.us)
+            Section {
+                Picker(L("Windows keyboard layout"), selection: $state.settings.windowsLayout) {
+                    Text(L("Italian")).tag(WindowsLayout.italian)
+                    Text(L("US")).tag(WindowsLayout.us)
                 }
-                modifierPicker("⌘ Comando diventa", $state.settings.commandKey)
-                modifierPicker("⌃ Controllo diventa", $state.settings.controlKey)
-                modifierPicker("⌥ Opzione diventa", $state.settings.optionKey)
-                Toggle("⌥ destro come AltGr", isOn: $state.settings.rightOptionIsAltGr)
-                Toggle("Inverti la rotella", isOn: $state.settings.invertScroll)
+                modifierPicker(L("⌘ Command becomes"), $state.settings.commandKey)
+                modifierPicker(L("⌃ Control becomes"), $state.settings.controlKey)
+                modifierPicker(L("⌥ Option becomes"), $state.settings.optionKey)
+                optionToggle(L("Right ⌥ Option is AltGr"),
+                             detail: L("Types characters such as @ # [ ] { } on the Italian layout."),
+                             isOn: $state.settings.rightOptionIsAltGr)
+            } header: {
+                Text(L("Keyboard on the PC"))
             }
-            Section("Scorciatoia di emergenza") {
+
+            Section {
+                Toggle(L("Invert scroll direction"), isOn: $state.settings.invertScroll)
+            } header: {
+                Text(L("Mouse"))
+            }
+
+            Section {
                 HStack {
                     Toggle("⌃", isOn: $state.settings.hotkey.control)
                     Toggle("⌥", isOn: $state.settings.hotkey.option)
@@ -142,14 +245,54 @@ struct SettingsView: View {
                     Toggle("⌘", isOn: $state.settings.hotkey.command)
                     Picker("", selection: $state.settings.hotkey.keyCode) {
                         ForEach(Hotkey.keyNames, id: \.keyCode) { key in
-                            Text(key.name).tag(key.keyCode)
+                            Text(L(key.name)).tag(key.keyCode)
                         }
                     }
                     .labelsHidden()
+                    .frame(maxWidth: 120)
+                    Spacer()
+                    Text(hotkeyText(state.settings.hotkey)).font(.title3.monospaced()).foregroundStyle(.secondary)
                 }
                 .toggleStyle(.button)
-                Text("Riporta sempre l'input al Mac; dal Mac passa manualmente al PC. Attuale: \(state.settings.hotkey.description)")
-                    .font(.caption).foregroundStyle(.secondary)
+            } header: {
+                Text(L("Emergency shortcut"))
+            } footer: {
+                note(L("Always brings the input back to the Mac; on the Mac it switches to the PC manually."))
+            }
+        }
+        .formStyle(.grouped)
+    }
+
+    // MARK: Condivisione e blocco
+
+    private var sharingPane: some View {
+        Form {
+            Section {
+                optionToggle(L("Share the clipboard with the PC"),
+                             detail: L("Text and images, in both directions. Requires “Share clipboard” in Mouse Without Borders on the PC."),
+                             isOn: $state.settings.shareClipboard)
+            } header: {
+                Text(L("Clipboard"))
+            }
+
+            Section {
+                optionToggle(L("Keep the other computers awake"),
+                             detail: L("While you use the Mac, the PC doesn't start the screen saver or go to sleep. Activity on the PC keeps the Mac awake when the PC has the same option on."),
+                             isOn: $state.settings.keepOthersAwake)
+            } header: {
+                Text(L("Sleep"))
+            } footer: {
+                note(L("When the Mac goes to sleep the PC is told right away; on wake the connection resumes as soon as the network is back."))
+            }
+
+            Section {
+                Toggle(L("Lock the Mac and the PC together"), isOn: $state.settings.syncLock)
+                TextField(L("PC shortcut"), text: $state.settings.lockAllShortcut, prompt: Text("Win+Ctrl+Alt+L"))
+                    .disabled(!state.settings.syncLock)
+            } header: {
+                Text(L("Screen lock"))
+            } footer: {
+                note(L("⌃⌘Q on the Mac also locks the PC; Win+L sent to the PC, or the shortcut pressed twice on the PC, also locks the Mac. The PC shortcut is the “lock all machines” one set in PowerToys → Mouse Without Borders, written like Win+Ctrl+Alt+L."))
             }
         }
         .formStyle(.grouped)
@@ -157,22 +300,60 @@ struct SettingsView: View {
 
     // MARK: Componenti
 
+    private func note(_ text: String) -> some View {
+        Text(text)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .multilineTextAlignment(.leading)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// Interruttore con una riga di spiegazione sotto il titolo.
+    private func optionToggle(_ title: String, detail: String, isOn: Binding<Bool>) -> some View {
+        Toggle(isOn: isOn) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                Text(detail).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
     private func modifierPicker(_ title: String, _ selection: Binding<ModifierTarget>) -> some View {
         Picker(title, selection: selection) {
-            Text("Ctrl").tag(ModifierTarget.control)
-            Text("Win").tag(ModifierTarget.windows)
-            Text("Alt").tag(ModifierTarget.alt)
+            Text(verbatim: "Ctrl").tag(ModifierTarget.control)
+            Text(verbatim: "Win").tag(ModifierTarget.windows)
+            Text(verbatim: "Alt").tag(ModifierTarget.alt)
         }
     }
 
     private func permissionRow(_ title: String, granted: Bool, pane: String) -> some View {
         LabeledContent(title) {
             if granted {
-                Label("concesso", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+                Label(L("Granted"), systemImage: "checkmark.circle.fill").foregroundStyle(.green)
             } else {
-                Button("Apri Impostazioni di Sistema…") { model.openPrivacySettings(pane) }
+                Button(L("Open System Settings…")) { model.openPrivacySettings(pane) }
             }
         }
+    }
+
+    private func hotkeyText(_ hotkey: Hotkey) -> String {
+        hotkey.description(keyName: { L($0) })
+    }
+
+    private func percent(_ value: Double) -> Int {
+        Int((value * 100).rounded())
+    }
+
+    /// Inizio e fine del tratto attivo restano distanti almeno il 5%.
+    private var rangeStart: Binding<Double> {
+        Binding(get: { state.settings.edgeStart },
+                set: { state.settings.edgeStart = min($0, state.settings.edgeEnd - 0.05) })
+    }
+
+    private var rangeEnd: Binding<Double> {
+        Binding(get: { state.settings.edgeEnd },
+                set: { state.settings.edgeEnd = max($0, state.settings.edgeStart + 0.05) })
     }
 
     private var statusColor: Color {
@@ -197,30 +378,30 @@ struct SettingsView: View {
 
     private func apply() {
         guard let port = parsedPort else {
-            show("Porta base non valida", error: true)
+            show(L("The base port is not valid."), error: true)
             return
         }
         guard state.settings.hotkey.control || state.settings.hotkey.option || state.settings.hotkey.command else {
-            show("La scorciatoia richiede almeno ⌃, ⌥ o ⌘", error: true)
+            show(L("The emergency shortcut needs at least ⌃, ⌥ or ⌘."), error: true)
             return
         }
         state.settings.basePort = port
         state.settings.remoteHost = state.settings.remoteHost.trimmingCharacters(in: .whitespaces)
         state.settings.localName = String(state.settings.localName.trimmingCharacters(in: .whitespaces).prefix(32))
         guard let lockShortcut = LockShortcut(parsing: state.settings.lockAllShortcut) else {
-            show("Scorciatoia di blocco non valida: modificatori (Win, Ctrl, Alt, Shift) e un tasto A–Z o 0–9, per esempio Win+Ctrl+Alt+L", error: true)
+            show(L("Invalid lock shortcut: use modifiers (Win, Ctrl, Alt, Shift) and a key A–Z or 0–9, e.g. Win+Ctrl+Alt+L."), error: true)
             return
         }
         state.settings.lockAllShortcut = lockShortcut.description
         guard !state.settings.localName.isEmpty else {
-            show("Il nome del Mac non può essere vuoto", error: true)
+            show(L("The Mac's name can't be empty."), error: true)
             return
         }
         do {
             try model.apply(state.settings)
-            show("Impostazioni applicate", error: false)
+            show(L("Settings applied."), error: false)
         } catch {
-            show("\(error.localizedDescription)", error: true)
+            show(error.localizedDescription, error: true)
         }
     }
 
@@ -228,13 +409,13 @@ struct SettingsView: View {
         let key = String(state.newKey.unicodeScalars.filter { !$0.properties.isWhitespace })
         // Stessa regola di PowerToys: almeno 16 caratteri, spazi esclusi.
         guard key.count >= 16 else {
-            show("La chiave deve avere almeno 16 caratteri", error: true)
+            show(L("The key must be at least 16 characters long."), error: true)
             return
         }
         do {
             try model.saveSecurityKey(key)
             state.newKey = ""
-            show("Chiave salvata nel Keychain", error: false)
+            show(L("Key saved in the Keychain."), error: false)
         } catch {
             show("\(error)", error: true)
         }

@@ -1,0 +1,125 @@
+/* Italiano. Chiave = testo inglese dell'interfaccia (vedi Localization.swift). */
+
+/* Stato */
+"Off" = "Disattivato";
+"PC name not set" = "Nome del PC non configurato";
+"Security key not set" = "Security key non impostata";
+"Permissions missing" = "Permessi mancanti";
+"Security key doesn't match the PC" = "Security key diversa da quella del PC";
+"Waiting for the PC…" = "In attesa del PC…";
+"Connected to %@" = "Connesso a %@";
+"Controlling %@" = "Controllo su %@";
+"Open at login: %@" = "Avvio al login: %@";
+
+/* Menu */
+"Grant Accessibility…" = "Concedi Accessibilità…";
+"Grant Input Monitoring…" = "Concedi Monitoraggio input…";
+"Back to the Mac" = "Torna al Mac";
+"Switch to the PC" = "Passa al PC";
+"Shortcut: %@" = "Scorciatoia: %@";
+"Emergency shortcut: %@" = "Scorciatoia di emergenza: %@";
+"Enabled" = "Attivo";
+"Open at Login" = "Avvia al login";
+"Settings…" = "Impostazioni…";
+"Quit MWB Mac Host" = "Esci da MWB Mac Host";
+"MWB Mac Host Settings" = "Impostazioni di MWB Mac Host";
+
+/* Nomi dei tasti della scorciatoia di emergenza */
+"Space" = "Spazio";
+"Return" = "Invio";
+"Tab" = "Tab";
+
+/* Impostazioni: sezioni e pulsanti */
+"Connection" = "Connessione";
+"Screen Edge" = "Bordo dello schermo";
+"Keyboard & Mouse" = "Tastiera e mouse";
+"Sharing & Lock" = "Condivisione e blocco";
+"Revert" = "Annulla modifiche";
+"Apply" = "Applica";
+
+/* Connessione */
+"PC with Mouse Without Borders" = "PC con Mouse Without Borders";
+"PC name or address" = "Nome o indirizzo del PC";
+"e.g. MYPC or 192.168.1.20" = "es. MIOPC o 192.168.1.20";
+"This Mac's name" = "Nome di questo Mac";
+"Base port" = "Porta base";
+"In PowerToys, add this Mac's name to the device layout; the PC must be able to resolve it on the network. Mouse Without Borders uses the base port for the clipboard and the next one for messages (default 15100)." = "In PowerToys inserisci il nome di questo Mac nella disposizione dei dispositivi; il PC deve poterlo risolvere in rete. Mouse Without Borders usa la porta base per gli appunti e la successiva per i messaggi (predefinita 15100).";
+"Security key" = "Security key";
+"Keychain" = "Portachiavi";
+"Stored" = "Presente";
+"Missing" = "Assente";
+"New security key" = "Nuova security key";
+"Save" = "Salva";
+"The key shown in PowerToys → Mouse Without Borders on the PC. It is stored only in the Keychain." = "La chiave mostrata da PowerToys → Mouse Without Borders sul PC. Viene conservata solo nel portachiavi.";
+"Permissions" = "Permessi";
+"Accessibility" = "Accessibilità";
+"Input Monitoring" = "Monitoraggio input";
+"Granted" = "Concesso";
+"Open System Settings…" = "Apri Impostazioni di Sistema…";
+"Needed to read the keyboard and mouse and send them to the PC." = "Servono per leggere tastiera e mouse e inviarli al PC.";
+
+/* Bordo dello schermo */
+"Arrangement of the Mac and the PC" = "Disposizione del Mac e del PC";
+"Position of the PC" = "Posizione del PC";
+"The PC is on the" = "Il PC si trova a";
+"Left" = "Sinistra";
+"Right" = "Destra";
+"Top" = "In alto";
+"Bottom" = "In basso";
+"In the PowerToys device layout, place the Mac on the opposite side of the PC, otherwise the cursor can't come back." = "Nella disposizione dei dispositivi di PowerToys metti il Mac dal lato opposto del PC, altrimenti il cursore non può tornare indietro.";
+"Part of the edge that leads to the PC" = "Tratto del bordo che porta al PC";
+"From %ld%%" = "Da %ld%%";
+"To %ld%%" = "A %ld%%";
+"0% is the top of the screen, 100% the bottom. Narrow it when the PC screen is smaller or not aligned with the Mac, so the cursor crosses only where the two screens meet." = "0% è il punto più alto dello schermo, 100% il più basso. Restringilo se lo schermo del PC è più piccolo o non allineato con il Mac: il cursore passerà solo dove i due schermi si affiancano.";
+"0% is the left end of the screen, 100% the right end. Narrow it when the PC screen is smaller or not aligned with the Mac, so the cursor crosses only where the two screens meet." = "0% è l'estremità sinistra dello schermo, 100% quella destra. Restringilo se lo schermo del PC è più piccolo o non allineato con il Mac: il cursore passerà solo dove i due schermi si affiancano.";
+"Ignore screen corners" = "Ignora gli angoli dello schermo";
+"Pushing into a corner doesn't switch to the PC, so hot corners and Notification Center keep working." = "Spingendo il cursore in un angolo non si passa al PC: gli angoli attivi e il Centro notifiche continuano a funzionare.";
+"Switching to the PC" = "Passaggio al PC";
+"Delay: %ld ms" = "Ritardo: %ld ms";
+"Resistance: %ld px" = "Resistenza: %ld px";
+"Only while holding" = "Solo tenendo premuto";
+"No key" = "Nessun tasto";
+"⌃ Control" = "⌃ Controllo";
+"⌥ Option" = "⌥ Opzione";
+"⌘ Command" = "⌘ Comando";
+"⇧ Shift" = "⇧ Maiuscole";
+"Not while an app is full screen" = "Non con un'app a tutto schermo";
+"Games, presentations and videos keep the cursor on the Mac. The emergency shortcut still switches." = "Giochi, presentazioni e video tengono il cursore sul Mac. La scorciatoia di emergenza passa comunque al PC.";
+"The cursor moves to the PC after pushing against the edge for the delay time and for the resistance distance; both avoid accidental switches." = "Il cursore passa al PC dopo aver spinto contro il bordo per il tempo del ritardo e per la distanza della resistenza: entrambi evitano passaggi involontari.";
+
+/* Tastiera e mouse */
+"Keyboard on the PC" = "Tastiera sul PC";
+"Windows keyboard layout" = "Layout di tastiera di Windows";
+"Italian" = "Italiano";
+"US" = "Americano";
+"⌘ Command becomes" = "⌘ Comando diventa";
+"⌃ Control becomes" = "⌃ Controllo diventa";
+"⌥ Option becomes" = "⌥ Opzione diventa";
+"Right ⌥ Option is AltGr" = "⌥ Opzione destro come AltGr";
+"Types characters such as @ # [ ] { } on the Italian layout." = "Per digitare caratteri come @ # [ ] { } con il layout italiano.";
+"Mouse" = "Mouse";
+"Invert scroll direction" = "Inverti il verso di scorrimento";
+"Emergency shortcut" = "Scorciatoia di emergenza";
+"Always brings the input back to the Mac; on the Mac it switches to the PC manually." = "Riporta sempre l'input al Mac; dal Mac passa manualmente al PC.";
+
+/* Condivisione e blocco */
+"Clipboard" = "Appunti";
+"Share the clipboard with the PC" = "Condividi gli appunti con il PC";
+"Text and images, in both directions. Requires “Share clipboard” in Mouse Without Borders on the PC." = "Testo e immagini, nelle due direzioni. Richiede l'opzione “Share clipboard” di Mouse Without Borders sul PC.";
+"Sleep" = "Stop";
+"Keep the other computers awake" = "Tieni svegli gli altri computer";
+"While you use the Mac, the PC doesn't start the screen saver or go to sleep. Activity on the PC keeps the Mac awake when the PC has the same option on." = "Mentre usi il Mac, il PC non avvia il salvaschermo e non va in stop. L'attività sul PC tiene sveglio il Mac, se sul PC è attiva la stessa opzione.";
+"When the Mac goes to sleep the PC is told right away; on wake the connection resumes as soon as the network is back." = "Quando il Mac va in stop il PC lo sa subito; al risveglio la connessione riprende appena la rete è disponibile.";
+"Screen lock" = "Blocco schermo";
+"Lock the Mac and the PC together" = "Blocca insieme Mac e PC";
+"PC shortcut" = "Scorciatoia del PC";
+"⌃⌘Q on the Mac also locks the PC; Win+L sent to the PC, or the shortcut pressed twice on the PC, also locks the Mac. The PC shortcut is the “lock all machines” one set in PowerToys → Mouse Without Borders, written like Win+Ctrl+Alt+L." = "⌃⌘Q sul Mac blocca anche il PC; Win+L inviato al PC, o la scorciatoia premuta due volte sul PC, bloccano anche il Mac. La scorciatoia del PC è quella “blocca tutte le macchine” impostata in PowerToys → Mouse Without Borders, nella forma Win+Ctrl+Alt+L.";
+
+/* Messaggi */
+"The base port is not valid." = "La porta base non è valida.";
+"The emergency shortcut needs at least ⌃, ⌥ or ⌘." = "La scorciatoia di emergenza richiede almeno ⌃, ⌥ o ⌘.";
+"Invalid lock shortcut: use modifiers (Win, Ctrl, Alt, Shift) and a key A–Z or 0–9, e.g. Win+Ctrl+Alt+L." = "Scorciatoia di blocco non valida: modificatori (Win, Ctrl, Alt, Shift) e un tasto A–Z o 0–9, per esempio Win+Ctrl+Alt+L.";
+"The Mac's name can't be empty." = "Il nome del Mac non può essere vuoto.";
+"Settings applied." = "Impostazioni applicate.";
+"The key must be at least 16 characters long." = "La chiave deve avere almeno 16 caratteri.";
+"Key saved in the Keychain." = "Chiave salvata nel portachiavi.";

@@ -72,32 +72,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         if model.status == .missingPermissions {
             if !model.hasAccessibility {
-                menu.addItem(item("Concedi Accessibilità…", #selector(openAccessibility)))
+                menu.addItem(item(L("Grant Accessibility…"), #selector(openAccessibility)))
             }
             if !model.hasInputMonitoring {
-                menu.addItem(item("Concedi Monitoraggio input…", #selector(openInputMonitoring)))
+                menu.addItem(item(L("Grant Input Monitoring…"), #selector(openInputMonitoring)))
             }
         }
         menu.addItem(.separator())
 
-        let toggle = item(model.isRemote ? "Torna al Mac" : "Passa al PC", #selector(toggleRemote))
+        let hotkey = model.settings.hotkey.description(keyName: { L($0) })
+        let toggle = item(model.isRemote ? L("Back to the Mac") : L("Switch to the PC"), #selector(toggleRemote))
         toggle.isEnabled = model.canSwitchManually
-        toggle.toolTip = "Scorciatoia: \(model.settings.hotkey.description)"
+        toggle.toolTip = L("Shortcut: %@", hotkey)
         menu.addItem(toggle)
-        let hint = NSMenuItem(title: "Scorciatoia di emergenza: \(model.settings.hotkey.description)", action: nil, keyEquivalent: "")
+        let hint = NSMenuItem(title: L("Emergency shortcut: %@", hotkey), action: nil, keyEquivalent: "")
         hint.isEnabled = false
         menu.addItem(hint)
         menu.addItem(.separator())
 
-        let active = item("Attivo", #selector(toggleEnabled))
+        let active = item(L("Enabled"), #selector(toggleEnabled))
         active.state = model.enabled ? .on : .off
         menu.addItem(active)
-        let login = item("Avvia al login", #selector(toggleLogin))
+        let login = item(L("Open at Login"), #selector(toggleLogin))
         login.state = model.launchesAtLogin ? .on : .off
         menu.addItem(login)
-        menu.addItem(item("Impostazioni…", #selector(showSettings), key: ","))
+        menu.addItem(item(L("Settings…"), #selector(showSettings), key: ","))
         menu.addItem(.separator())
-        menu.addItem(item("Esci da MWB Mac Host", #selector(quit), key: "q"))
+        menu.addItem(item(L("Quit MWB Mac Host"), #selector(quit), key: "q"))
     }
 
     private func item(_ title: String, _ action: Selector, key: String = "") -> NSMenuItem {
@@ -116,7 +117,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc private func showSettings() {
         if settingsWindow == nil {
             let window = NSWindow(contentViewController: NSHostingController(rootView: SettingsView(model: model, state: SettingsDraft(settings: model.settings))))
-            window.title = "MWB Mac Host — Impostazioni"
+            window.title = L("MWB Mac Host Settings")
             window.styleMask = [.titled, .closable, .miniaturizable]
             window.isReleasedWhenClosed = false
             window.center()

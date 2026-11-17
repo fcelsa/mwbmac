@@ -1,0 +1,6 @@
+/*
+  Inglese, lingua di sviluppo e di ripiego.
+  Le chiavi sono già il testo inglese (vedi Sources/MWBMacHost/Localization.swift):
+  questo file serve solo a dichiarare la localizzazione e a correggere un testo senza
+  toccare il codice.
+*/

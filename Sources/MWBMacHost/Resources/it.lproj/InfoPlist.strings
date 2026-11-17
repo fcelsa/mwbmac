@@ -1,0 +1,2 @@
+/* Testi di Info.plist in italiano. */
+"NSLocalNetworkUsageDescription" = "MWB Mac Host si collega al PC Windows sulla rete locale per inviargli mouse e tastiera tramite Mouse Without Borders.";
