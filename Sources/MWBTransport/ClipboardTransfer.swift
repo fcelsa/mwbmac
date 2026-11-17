@@ -127,14 +127,25 @@ final class ClipboardTransfer {
             case .pull: type = .clipboard
             case .push, .serve: type = .clipboardPush
             }
-            var greeting = Packet(type: type, machineName: context.localName)
-            greeting.src = context.localID
-            try sendEncrypted(KeyDerivation.randomBytes(KeyDerivation.blockSize) + greeting.serialized(magic: context.magic))
+            let greeting = ClipboardTransfer.greeting(type: type, localName: context.localName, localID: context.localID)
+            try sendEncrypted(KeyDerivation.randomBytes(KeyDerivation.blockSize) + greeting)
         } catch {
             finish(.failed("inizializzazione della cifratura fallita: \(error)"))
             return
         }
         receive()
+    }
+
+    /// Pacchetto di saluto. A differenza del canale messaggi qui PowerToys non azzera
+    /// checksum e magic prima di leggere il tipo: `ShakeHand` confronta l'intero campo a
+    /// 32 bit con `Clipboard`/`ClipboardPush`, quindi i byte 1..3 devono essere zero,
+    /// altrimenti la connessione viene scartata (e lasciata aperta, senza errori).
+    static func greeting(type: PackageType, localName: String, localID: UInt32) -> [UInt8] {
+        var packet = Packet(type: type, machineName: localName)
+        packet.src = localID
+        var bytes = packet.serialized(magic: 0)
+        bytes[1] = 0
+        return bytes
     }
 
     private func handleGreeting(_ bytes: [UInt8]) {

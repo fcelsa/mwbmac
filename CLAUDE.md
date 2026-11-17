@@ -104,7 +104,9 @@ byte con 48 byte di dati agli offset 16..63, poi `ClipboardDataEnd`); oltre, pac
   quindi `Controller` lo fa ripetere subito prima del cambio macchina;
 - sul canale appunti legge fino alla chiusura della connessione e vuole un multiplo di
   16 byte, altrimenti la decifratura dell'ultimo blocco fallisce;
-- il pacchetto di saluto del canale appunti non porta magic né checksum.
+- il pacchetto di saluto del canale appunti non porta magic né checksum, e PowerToys
+  confronta l'intero campo tipo a 32 bit: se i byte 1..3 non sono zero scarta la
+  connessione lasciandola aperta, senza alcun errore visibile dal Mac.
 
 Mai provare la connessione al PC con una chiave sbagliata: dopo dieci pacchetti non
 validi PowerToys marca `InvalidKeyFound` e smette di aprire connessioni client.

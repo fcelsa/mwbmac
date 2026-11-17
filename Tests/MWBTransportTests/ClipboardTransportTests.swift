@@ -217,6 +217,74 @@ struct ClipboardTransferTests {
         }
     }
 
+    /// `Clipboard.ShakeHand` confronta l'intero campo tipo a 32 bit: nel saluto i byte di
+    /// checksum e magic devono essere zero, o PowerToys scarta la connessione.
+    @Test func greetingHasNoChecksumOrMagic() {
+        for type in [PackageType.clipboard, .clipboardPush] {
+            let bytes = ClipboardTransfer.greeting(type: type, localName: "office-macbook1", localID: 0x11223344)
+            #expect(bytes.count == 64)
+            #expect(Array(bytes[0..<4]) == [type.rawValue, 0, 0, 0])
+            #expect(Array(bytes[8..<12]) == [0x44, 0x33, 0x22, 0x11])
+            #expect(String(decoding: bytes[32..<64], as: UTF8.self) == "office-macbook1" + String(repeating: " ", count: 17))
+        }
+    }
+
+    /// PowerToys non si ferma alla dimensione dichiarata: legge finché la connessione non
+    /// viene chiusa. Qui un lettore grezzo fa lo stesso e verifica che la fine del flusso
+    /// arrivi subito dopo i dati, in un multiplo di 16 byte.
+    @Test func senderClosesTheStreamAfterTheData() async throws {
+        let payload = ClipboardPayload(kind: .image, data: pseudoRandom(1_300_335, seed: 21))
+        let port: UInt16 = 25320
+        let keep = Box<ClipboardTransfer>()
+        let listener = try NWListener(using: parameters(), on: NWEndpoint.Port(rawValue: port)!)
+        listener.newConnectionHandler = { connection in
+            let transfer = ClipboardTransfer(connection: connection, role: .serve(payload), scheme: .current,
+                                             context: self.context(name: "mac-finto", id: 2222), queue: self.queue,
+                                             isKnownMachine: { _, _ in true }, completion: { _, _ in })
+            keep.add(transfer)
+            transfer.start()
+        }
+        listener.start(queue: queue)
+
+        // Lato "PowerToys": intestazione, blocco casuale e saluto `Clipboard`, poi sola lettura.
+        let peer = context(name: "pc-finto", id: 1111)
+        let header = KeyDerivation.randomBytes(KeyDerivation.headerSize)
+        let key = try KeyDerivation.deriveKey(securityKey: peer.securityKey, salt: Array(header[0..<16]))
+        let encryptor = try CipherStream(key: key, iv: Array(header[16...]), direction: .encrypt)
+        var greeting = Packet(type: .clipboard, machineName: "pc-finto")
+        greeting.src = 1111
+        _ = greeting
+        let hello = try encryptor.process(KeyDerivation.randomBytes(16)
+            + ClipboardTransfer.greeting(type: .clipboard, localName: "pc-finto", localID: 1111))
+
+        let received = Box<Int>()
+        let ended = Box<Date>()
+        let connection = NWConnection(host: "127.0.0.1", port: NWEndpoint.Port(rawValue: port)!, using: parameters())
+        func read() {
+            connection.receive(minimumIncompleteLength: 1, maximumLength: 1 << 20) { data, _, isComplete, error in
+                if let data { received.add(data.count) }
+                if isComplete || error != nil { ended.add(Date()) } else { read() }
+            }
+        }
+        connection.stateUpdateHandler = { state in
+            if case .ready = state {
+                connection.send(content: Data(header + hello), completion: .contentProcessed { _ in })
+                read()
+            }
+        }
+        let started = Date()
+        connection.start(queue: queue)
+        #expect(await ended.wait(count: 1, timeout: 8), "la fine del flusso non è arrivata")
+        let total = received.all.reduce(0, +)
+        // 32 di intestazione in chiaro + 16 casuali + 64 di saluto + 1024 + dati allineati a 16.
+        let expected = 32 + 16 + 64 + 1024 + (payload.data.count + 15) / 16 * 16
+        #expect(total == expected)
+        #expect((total - 32) % 16 == 0)
+        if let end = ended.all.first { #expect(end.timeIntervalSince(started) < 5) }
+        connection.cancel()
+        listener.cancel()
+    }
+
     @Test func peerPushesToOurListener() async throws {
         let payload = ClipboardPayload(kind: .text, data: pseudoRandom(2_000_001, seed: 9))
         let result = try await run(port: 25310, serverRole: .serve(nil), clientRole: .push(payload))
