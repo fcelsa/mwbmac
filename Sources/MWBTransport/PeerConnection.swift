@@ -81,6 +81,9 @@ final class PeerConnection {
     private var decryptor: CipherStream?
     private var cipherBuffer: [UInt8] = []
     private var plainBuffer: [UInt8] = []
+    /// Byte di `plainBuffer` già consumati: si compatta di rado invece di spostare tutto a
+    /// ogni pacchetto (con 1 MB di appunti in linea sarebbero gigabyte di copie).
+    private var plainOffset = 0
     private var randomBlockSkipped = false
     private var challenge: Packet
     private var invalidCount = 0
@@ -105,6 +108,15 @@ final class PeerConnection {
         self.challenge = Handshake.challenge(localName: context.localName, localID: context.localID)
         // Come PowerToys, la sfida ha un Id casuale: non passa dal contatore della sessione.
         self.challenge.id = Int32.random(in: 1...Int32.max)
+    }
+
+    /// Vedi `ClipboardTransfer.deinit`: senza chiusura esplicita il gestore di stato e la
+    /// connessione si tratterrebbero a vicenda.
+    deinit {
+        if !isClosed {
+            connection.stateUpdateHandler = nil
+            connection.cancel()
+        }
     }
 
     func start() {
@@ -276,16 +288,17 @@ final class PeerConnection {
 
         if !randomBlockSkipped {
             guard plainBuffer.count >= KeyDerivation.blockSize else { return }
-            plainBuffer.removeFirst(KeyDerivation.blockSize)
+            plainOffset = KeyDerivation.blockSize
             randomBlockSkipped = true
         }
 
-        while !isClosed, plainBuffer.count >= Packet.size {
-            let header = Array(plainBuffer[0..<Packet.size])
+        defer { compactPlainBuffer() }
+        while !isClosed, plainBuffer.count - plainOffset >= Packet.size {
+            let header = Array(plainBuffer[plainOffset..<(plainOffset + Packet.size)])
             let size = Packet.expectedSize(header: header, magic: context.magic)
-            guard plainBuffer.count >= size else { return }
-            let bytes = Array(plainBuffer[0..<size])
-            plainBuffer.removeFirst(size)
+            guard plainBuffer.count - plainOffset >= size else { return }
+            let bytes = Array(plainBuffer[plainOffset..<(plainOffset + size)])
+            plainOffset += size
             do {
                 let packet = try Packet(bytes: bytes, magic: context.magic)
                 invalidCount = 0
@@ -293,10 +306,23 @@ final class PeerConnection {
             } catch {
                 invalidCount += 1
                 context.log.debug("\(label): pacchetto non valido (\(error))")
-                // Con la chiave sbagliata tutto il flusso è rumore: inutile insistere.
-                if invalidCount > 5 { close(.invalidKey) }
+                guard invalidCount > 5 else { continue }
+                // Prima della fiducia un flusso illeggibile vuol dire chiave diversa; dopo,
+                // la chiave è provata e si tratta di un guasto della connessione, che non
+                // deve bloccare i tentativi di riconnessione.
+                close(isTrusted ? .network("flusso corrotto") : .invalidKey)
             }
         }
+    }
+
+    private func compactPlainBuffer() {
+        guard plainOffset > 0 else { return }
+        if plainOffset >= plainBuffer.count {
+            plainBuffer.removeAll(keepingCapacity: true)
+        } else {
+            plainBuffer.removeFirst(plainOffset)
+        }
+        plainOffset = 0
     }
 
     private func handle(_ packet: Packet) {

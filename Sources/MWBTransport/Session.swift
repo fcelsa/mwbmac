@@ -83,6 +83,10 @@ public final class Session: @unchecked Sendable {
     private var pullsInProgress = Set<UInt32>()
     private var lastReceivedDigest: (digest: Int, time: Date)?
     private var lastScheme = CipherScheme.current
+    /// PowerToys apre una o due connessioni per volta (IPv4 e IPv6) e riprova ogni pochi
+    /// secondi: questi limiti non lo ostacolano.
+    private var messageAdmission = Admission(maxPending: 4, maxPerWindow: 10, window: 10)
+    private var clipboardAdmission = Admission(maxPending: 3, maxPerWindow: 10, window: 10)
 
     private let stateLock = NSLock()
     private var connectedSnapshot: [Machine] = []
@@ -135,6 +139,14 @@ public final class Session: @unchecked Sendable {
             clipboardListener?.cancel()
             clipboardListener = nil
             transfers.forEach { $0.cancel() }
+            localClipboard = nil
+            // Le callback possono trattenere chi le ha impostate (e la sessione stessa):
+            // dopo l'arresto non servono più.
+            onMachineConnected = nil
+            onMachineDisconnected = nil
+            onPacket = nil
+            onInvalidKey = nil
+            onClipboardReceived = nil
             let closing = peers
             // Lascia a Network.framework il tempo di svuotare il buffer di invio.
             queue.asyncAfter(deadline: .now() + 0.2) {
@@ -179,7 +191,17 @@ public final class Session: @unchecked Sendable {
         do {
             let listener = try NWListener(using: Session.tcpParameters(), on: nwPort)
             listener.newConnectionHandler = { [weak self] connection in
-                self?.adopt(connection, isOutgoing: false)
+                guard let self else {
+                    connection.cancel()
+                    return
+                }
+                let pending = self.peers.filter { !$0.isOutgoing && !$0.isTrusted && !$0.isClosed }.count
+                guard self.messageAdmission.admit(pending: pending, now: ProcessInfo.processInfo.systemUptime) else {
+                    self.log.debug("Connessione entrante da \(connection.endpoint) rifiutata: troppe connessioni non autenticate")
+                    connection.cancel()
+                    return
+                }
+                self.adopt(connection, isOutgoing: false)
             }
             listener.stateUpdateHandler = { [weak self] state in
                 switch state {
@@ -286,7 +308,9 @@ public final class Session: @unchecked Sendable {
                 log.info("Appunti non inviati: \(payload.data.count / (1024 * 1024)) MB superano il limite di 100 MB")
                 return
             }
-            localClipboard = payload
+            // Solo i contenuti grandi vengono richiesti in seguito sul canale appunti; quelli
+            // in linea partono subito e non serve trattenerli.
+            localClipboard = payload.isInline ? nil : payload
             deliveredTo.removeAll()
             if payload.isInline {
                 log.debug("Appunti (\(payload.kind.rawValue), \(payload.data.count) byte) inviati in linea")
@@ -318,7 +342,15 @@ public final class Session: @unchecked Sendable {
         do {
             let listener = try NWListener(using: Session.tcpParameters(), on: nwPort)
             listener.newConnectionHandler = { [weak self] connection in
-                guard let self else { return }
+                guard let self else {
+                    connection.cancel()
+                    return
+                }
+                guard self.clipboardAdmission.admit(pending: self.transfers.count, now: ProcessInfo.processInfo.systemUptime) else {
+                    self.log.debug("Canale appunti: connessione da \(connection.endpoint) rifiutata: troppe connessioni")
+                    connection.cancel()
+                    return
+                }
                 self.log.debug("Canale appunti: connessione entrante da \(connection.endpoint)")
                 self.startTransfer(connection, role: .serve(self.localClipboard))
             }
@@ -382,7 +414,12 @@ public final class Session: @unchecked Sendable {
     private func receivedClipboard(_ payload: ClipboardPayload, from machineID: UInt32) {
         guard let machine = pool[machineID] else { return }
         // PowerToys invia gli appunti in linea su tutti i socket verso la macchina: lo
-        // stesso contenuto arriva due volte a distanza di millisecondi.
+        // stesso contenuto arriva due volte a distanza di millisecondi. I contenuti grandi
+        // arrivano una volta sola e calcolarne l'impronta fermerebbe la coda.
+        guard payload.data.count <= 16 * ClipboardPayload.inlineLimit else {
+            onClipboardReceived?(payload, machine)
+            return
+        }
         var hasher = Hasher()
         hasher.combine(payload.kind)
         hasher.combine(payload.data)

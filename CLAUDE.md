@@ -77,6 +77,11 @@ delle viste sta in `ObservableObject` con `@Published`. Ogni tanto `swift test` 
 plugin. Rimedio affidabile:
 `swift test -Xswiftc -load-plugin-library -Xswiftc /Library/Developer/CommandLineTools/usr/lib/swift/host/plugins/testing/libTestingMacros.dylib`.
 Dentro `#expect(...)` non si possono chiamare metodi `mutating`: assegnare prima a una costante.
+Analisi dei leak: `leaks` non può lanciare i test (toglie le variabili DYLD_ necessarie a
+caricare Testing.framework); si avvia `swiftpm-testing-helper` con `MWB_LEAK_PAUSE=1`, che
+tiene vivo il processo qualche secondo a fine test (`ZZLeakPause`), e si esegue `leaks <pid>`.
+`NWConnection` trattiene il proprio gestore di stato e viceversa: ogni connessione va chiusa
+mettendo `stateUpdateHandler = nil` prima di `cancel()`.
 
 Il sorgente in `reference/` è più recente di quello descritto in `docs/analisi.md`:
 dopo l'intestazione in chiaro salt+IV, il primo blocco cifrato di ogni direzione è un

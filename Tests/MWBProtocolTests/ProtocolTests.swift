@@ -152,6 +152,23 @@ struct PacketTests {
         #expect(throws: Never.self) { try Packet(bytes: bytes, magic: (magic & 0xFFFF0000) | 0x1234) }
     }
 
+    @Test func relativeMouseClampsHugeDeltas() {
+        // Senza limite, Int32.max + 100000 farebbe terminare il programma.
+        #expect(RelativeMouse.encode(Int32.max) == 199_999)
+        #expect(RelativeMouse.encode(Int32.min) == -199_999)
+        #expect(RelativeMouse.decode(RelativeMouse.encode(250_000)) == 99_999)
+    }
+
+    @Test func protocolLogHidesKeystrokes() {
+        var letter = Packet(type: .keyboard, des: 1)
+        letter.keyboard = KeyboardData(vk: 0x41, flags: 0)
+        #expect(letter.description.contains("vk=•"))
+        #expect(!letter.description.contains("0x41"))
+        var shift = Packet(type: .keyboard, des: 1)
+        shift.keyboard = KeyboardData(vk: 0xA0, flags: 0x80)
+        #expect(shift.description.contains("vk=0xa0"))
+    }
+
     @Test func testRelativeMouseMarker() {
         #expect(RelativeMouse.encode(0) == 100_000)
         #expect(RelativeMouse.encode(-1) == -100_001)

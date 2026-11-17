@@ -40,7 +40,8 @@ public final class ClipboardBridge: NSObject, NSPasteboardItemDataProvider {
     ]
     /// Oltre questa dimensione il testo non viene inviato (prima della compressione).
     private static let maxTextBytes = 64 * 1024 * 1024
-    private static let maxPixels = 250_000_000
+    /// 64 milioni di pixel (8K è 33 milioni): oltre, la sola bitmap supera i 256 MB.
+    private static let maxPixels = 64_000_000
 
     public init(session: Session, log: Log, activeMachine: @escaping () -> UInt32?) {
         self.session = session
@@ -168,9 +169,12 @@ public final class ClipboardBridge: NSObject, NSPasteboardItemDataProvider {
                 log.info("Appunti ← \(machine.name): testo, \((plain ?? html ?? "").count) caratteri")
             }
         case .image:
-            // PowerToys accoda zeri al PNG; se non è un PNG si prova qualunque formato noto.
-            let candidate = PNGData.sanitized(payload.data).map { Data($0) } ?? Data(payload.data)
-            guard let png = ClipboardBridge.normalizedPNG(from: candidate, convertToSRGB: false) else {
+            // PowerToys invia sempre PNG (con zeri in coda). Dalla rete si accetta solo quello:
+            // niente PDF, TIFF o altri formati, i cui decodificatori sarebbero superficie
+            // d'attacco inutile.
+            guard let sanitized = PNGData.sanitized(payload.data),
+                  let png = ClipboardBridge.normalizedPNG(from: Data(sanitized), convertToSRGB: false,
+                                                          allowVectorFallback: false) else {
                 log.info("Immagine ricevuta da \(machine.name) non decodificabile (\(payload.data.count) byte), ignorata")
                 return
             }
@@ -196,6 +200,11 @@ public final class ClipboardBridge: NSObject, NSPasteboardItemDataProvider {
         lastSentDigest = nil
     }
 
+    /// Gli appunti sono passati ad altro contenuto: il PNG promesso non serve più.
+    public func pasteboardFinishedWithDataProvider(_ pasteboard: NSPasteboard) {
+        DispatchQueue.main.async { [weak self] in self?.promisedImage = nil }
+    }
+
     public func pasteboard(_ pasteboard: NSPasteboard?, item: NSPasteboardItem, provideDataForType type: NSPasteboard.PasteboardType) {
         guard type == .tiff, let png = promisedImage, let rep = NSBitmapImageRep(data: png),
               let tiff = rep.representation(using: .tiff, properties: [.compressionMethod: NSBitmapImageRep.TIFFCompression.lzw]) else { return }
@@ -208,12 +217,16 @@ public final class ClipboardBridge: NSObject, NSPasteboardItemDataProvider {
     /// a 8 bit per canale. Verso il PC si converte in sRGB: gli schermi dei Mac catturano
     /// in Display P3 e molte applicazioni Windows ignorano il profilo colore.
     /// Restituisce `nil` se i dati non sono un'immagine valida.
-    static func normalizedPNG(from data: Data, convertToSRGB: Bool = true) -> Data? {
+    static func normalizedPNG(from data: Data, convertToSRGB: Bool = true, allowVectorFallback: Bool = true) -> Data? {
         guard let source = CGImageSourceCreateWithData(data as CFData, nil),
               CGImageSourceGetCount(source) > 0,
               let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else {
-            // PDF e formati vettoriali: li rasterizza AppKit.
-            guard let rep = NSImage(data: data)?.tiffRepresentation.flatMap(NSBitmapImageRep.init(data:)) else { return nil }
+            // PDF e formati vettoriali (solo dagli appunti del Mac): li rasterizza AppKit,
+            // con lo stesso limite di pixel delle immagini.
+            guard allowVectorFallback, let vector = NSImage(data: data) else { return nil }
+            let size = vector.size
+            guard size.width > 0, size.height > 0, size.width * size.height * 4 <= Double(maxPixels) else { return nil }
+            guard let rep = vector.tiffRepresentation.flatMap(NSBitmapImageRep.init(data:)) else { return nil }
             return rep.representation(using: .png, properties: [:])
         }
         let width = image.width

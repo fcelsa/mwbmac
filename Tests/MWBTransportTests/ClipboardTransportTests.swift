@@ -236,11 +236,12 @@ struct ClipboardTransferTests {
         let payload = ClipboardPayload(kind: .image, data: pseudoRandom(1_300_335, seed: 21))
         let port: UInt16 = 25320
         let keep = Box<ClipboardTransfer>()
+        let serverOutcome = Box<ClipboardTransfer.Outcome>()
         let listener = try NWListener(using: parameters(), on: NWEndpoint.Port(rawValue: port)!)
         listener.newConnectionHandler = { connection in
             let transfer = ClipboardTransfer(connection: connection, role: .serve(payload), scheme: .current,
                                              context: self.context(name: "mac-finto", id: 2222), queue: self.queue,
-                                             isKnownMachine: { _, _ in true }, completion: { _, _ in })
+                                             isKnownMachine: { _, _ in true }, completion: { _, outcome in serverOutcome.add(outcome) })
             keep.add(transfer)
             transfer.start()
         }
@@ -281,8 +282,15 @@ struct ClipboardTransferTests {
         #expect(total == expected)
         #expect((total - 32) % 16 == 0)
         if let end = ended.all.first { #expect(end.timeIntervalSince(started) < 5) }
+        // Il gestore cattura la connessione: va tolto, o connessione e gestore si
+        // trattengono a vicenda (lo segnala `leaks`).
+        connection.stateUpdateHandler = nil
         connection.cancel()
         listener.cancel()
+        // Anche il lato che invia deve concludere (e liberare la connessione).
+        #expect(await serverOutcome.wait(count: 1, timeout: 5), "il trasferimento lato Mac non si è concluso")
+        if case .sent(_, let bytes)? = serverOutcome.all.first { #expect(bytes == payload.data.count) }
+        else { Issue.record("esito lato Mac: \(serverOutcome.all)") }
     }
 
     @Test func peerPushesToOurListener() async throws {

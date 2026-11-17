@@ -135,6 +135,17 @@ struct InputTranslatorTests {
         #expect(translator.pressedButtons.isEmpty)
     }
 
+    @Test func scrollIsClampedAgainstOverflow() {
+        var translator = InputTranslator()
+        let huge = translator.scroll(verticalLines: Int.max, horizontalLines: Int.min, verticalPixels: 0,
+                                     horizontalPixels: 0, isContinuous: false)
+        #expect(huge.map(\.wheelDelta) == [120_000, 120_000])
+        let nan = translator.scroll(verticalLines: 0, horizontalLines: 0, verticalPixels: .nan,
+                                    horizontalPixels: .infinity, isContinuous: true)
+        #expect(nan.isEmpty)
+        #expect(translator.mouseMove(dx: Int.max, dy: Int.min).x == 199_999)
+    }
+
     @Test func testCapsLockIsATap() {
         let events = InputTranslator().capsLockTap()
         #expect(events.map(\.vk) == [VK.capital, VK.capital])

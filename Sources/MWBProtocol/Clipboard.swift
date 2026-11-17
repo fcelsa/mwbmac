@@ -132,7 +132,9 @@ public struct ClipboardText: Equatable, Sendable {
     }
 
     /// Decodifica i dati ricevuti (`Clipboard.SetClipboardData`).
-    public init(decoding data: [UInt8], limit: Int = 4 * ClipboardPayload.maxSize) throws {
+    /// `limit` è la dimensione massima decompressa: il Deflate può espandersi oltre mille
+    /// volte, e 64 MB di UTF-16 sono già 32 milioni di caratteri.
+    public init(decoding data: [UInt8], limit: Int = 64 * 1024 * 1024) throws {
         let raw = try Deflate.decompress(data, limit: limit)
         // PowerToys decodifica a blocchi con il riempimento di zeri: i NUL non fanno parte del testo.
         let text = String(utf16LE: raw).replacingOccurrences(of: "\0", with: "")

@@ -1,4 +1,5 @@
 import Foundation
+import Network
 import Testing
 import MWBProtocol
 @testable import MWBTransport
@@ -168,6 +169,72 @@ struct SessionLoopbackTests {
         #expect(!events.all.contains("trusted"))
         #expect(client.connectedMachines.isEmpty)
         client.stop()
+        server.stop()
+    }
+}
+
+struct AdmissionTests {
+    @Test func limitsPendingConnections() {
+        var admission = Admission(maxPending: 2, maxPerWindow: 100, window: 10)
+        var results: [Bool] = []
+        results.append(admission.admit(pending: 0, now: 0))
+        results.append(admission.admit(pending: 1, now: 0))
+        results.append(admission.admit(pending: 2, now: 0))
+        // Chiusa una connessione pendente, se ne accetta un'altra.
+        results.append(admission.admit(pending: 1, now: 0.1))
+        #expect(results == [true, true, false, true])
+    }
+
+    @Test func limitsRateAndRecovers() {
+        var admission = Admission(maxPending: 100, maxPerWindow: 3, window: 10)
+        var results: [Bool] = []
+        for _ in 0..<3 { results.append(admission.admit(pending: 0, now: 1)) }
+        results.append(admission.admit(pending: 0, now: 5))
+        results.append(admission.admit(pending: 0, now: 10.9))
+        // Passata la finestra, si accetta di nuovo.
+        results.append(admission.admit(pending: 0, now: 11.1))
+        #expect(results == [true, true, true, false, false, true])
+    }
+}
+
+/// Connessioni a raffica da un peer che non conosce la chiave: oltre il limite vengono
+/// chiuse subito, senza derivazioni PBKDF2, e la sessione continua a funzionare.
+@Suite(.serialized)
+struct ConnectionFloodTests {
+    @Test func floodIsCappedAndLegitPeerStillConnects() async throws {
+        let port: UInt16 = 25401
+        let server = Session(configuration: .init(localName: "mac-finto", machineID: 2222,
+                                                  securityKey: "MwbEncryptionTestKey1234", remoteHost: nil,
+                                                  basePort: port - 1, listenPort: port))
+        server.log.sink = { _ in }
+        server.start()
+        try? await Task.sleep(nanoseconds: 300_000_000)
+
+        let queue = DispatchQueue(label: "test.flood")
+        let closed = Events()
+        var flood: [NWConnection] = []
+        for index in 0..<20 {
+            let connection = NWConnection(host: "127.0.0.1", port: NWEndpoint.Port(rawValue: port)!, using: .tcp)
+            connection.stateUpdateHandler = { state in
+                switch state {
+                case .failed, .cancelled: closed.record("chiusa-\(index)")
+                default: break
+                }
+            }
+            connection.start(queue: queue)
+            // Il peer resta muto: per una connessione accettata la sessione aspetta.
+            connection.receive(minimumIncompleteLength: 1, maximumLength: 1024) { _, _, isComplete, error in
+                if isComplete || error != nil { closed.record("chiusa-\(index)") }
+            }
+            flood.append(connection)
+        }
+        try? await Task.sleep(nanoseconds: 1_000_000_000)
+        // Oltre le 4 accettate, le altre 16 sono state chiuse dal Mac quasi subito.
+        #expect(Set(closed.all).count >= 16, "chiuse: \(Set(closed.all).count)")
+        flood.forEach {
+            $0.stateUpdateHandler = nil
+            $0.cancel()
+        }
         server.stop()
     }
 }

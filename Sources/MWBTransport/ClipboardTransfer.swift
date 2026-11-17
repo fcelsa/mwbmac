@@ -76,6 +76,16 @@ final class ClipboardTransfer {
         self.label = "appunti \(connection.endpoint)"
     }
 
+    /// Il gestore di stato di `NWConnection` trattiene la connessione stessa: se il
+    /// trasferimento viene abbandonato senza concluderlo, il ciclo va spezzato qui.
+    deinit {
+        watchdog?.cancel()
+        if !finished {
+            connection.stateUpdateHandler = nil
+            connection.cancel()
+        }
+    }
+
     func start() {
         connection.stateUpdateHandler = { [weak self] state in
             guard let self else { return }

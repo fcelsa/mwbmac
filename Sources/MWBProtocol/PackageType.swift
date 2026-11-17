@@ -91,8 +91,11 @@ public enum LLKHF {
 public enum RelativeMouse {
     public static let marker: Int32 = 100_000
 
+    /// Il delta viene limitato a ±(marker − 1): oltre, la somma traboccherebbe (arresto
+    /// del programma) o sarebbe ambigua per il ricevente.
     public static func encode(_ delta: Int32) -> Int32 {
-        delta < 0 ? delta - marker : delta + marker
+        let limited = min(max(delta, -(marker - 1)), marker - 1)
+        return limited < 0 ? limited - marker : limited + marker
     }
 
     public static func decode(_ value: Int32) -> Int32 {

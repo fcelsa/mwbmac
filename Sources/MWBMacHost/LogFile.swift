@@ -40,7 +40,10 @@ final class LogFile: @unchecked Sendable {
             try? manager.moveItem(at: url, to: old)
         }
         try? manager.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-        if !manager.fileExists(atPath: url.path) { manager.createFile(atPath: url.path, contents: nil) }
+        // Leggibile solo dall'utente: contiene nomi e indirizzi delle macchine.
+        if !manager.fileExists(atPath: url.path) {
+            manager.createFile(atPath: url.path, contents: nil, attributes: [.posixPermissions: 0o600])
+        }
         handle = try? FileHandle(forWritingTo: url)
         _ = try? handle?.seekToEnd()
         return handle

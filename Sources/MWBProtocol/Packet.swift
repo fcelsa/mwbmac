@@ -213,8 +213,12 @@ extension Packet: CustomStringConvertible {
             let m = mouse
             text += " x=\(m.x) y=\(m.y) wheel=\(m.wheelDelta) flags=0x\(String(m.flags, radix: 16))"
         case .keyboard:
+            // Il log del protocollo non deve diventare un keylogger (password digitate sul
+            // PC): si mostrano solo i modificatori, gli altri tasti restano anonimi.
             let k = keyboard
-            text += " vk=0x\(String(k.vk, radix: 16)) flags=0x\(String(k.flags, radix: 16))"
+            let modifiers: Set<Int32> = [0x10, 0x11, 0x12, 0x14, 0x5B, 0x5C, 0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5]
+            let vk = modifiers.contains(k.vk) ? "0x\(String(k.vk, radix: 16))" : "•"
+            text += " vk=\(vk) flags=0x\(String(k.flags, radix: 16))"
         default:
             break
         }

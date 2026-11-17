@@ -81,11 +81,11 @@ public struct InputTranslator: Sendable {
             let wholeH = horizontalRemainder.rounded(.towardZero)
             verticalRemainder -= wholeV
             horizontalRemainder -= wholeH
-            vertical = Int32(wholeV)
-            horizontal = Int32(wholeH)
+            vertical = InputTranslator.notches(wholeV)
+            horizontal = InputTranslator.notches(wholeH)
         } else {
-            vertical = Int32(clamping: verticalLines)
-            horizontal = Int32(clamping: horizontalLines)
+            vertical = InputTranslator.notches(Double(verticalLines))
+            horizontal = InputTranslator.notches(Double(horizontalLines))
         }
         if invertScroll {
             vertical = -vertical
@@ -101,6 +101,13 @@ public struct InputTranslator: Sendable {
                                     wheelDelta: -horizontal * WM.wheelDelta, flags: WM.mouseHWheel))
         }
         return result
+    }
+
+    /// Tacche per evento, limitate: valori fuori scala (o NaN) non devono far traboccare
+    /// la moltiplicazione per 120 né la conversione a Int32.
+    static func notches(_ value: Double) -> Int32 {
+        guard value.isFinite else { return 0 }
+        return Int32(min(max(value, -1000), 1000))
     }
 
     // MARK: Tastiera

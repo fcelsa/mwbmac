@@ -104,7 +104,8 @@ public struct Settings: Codable, Equatable, Sendable {
         self.init()
         let c = try decoder.container(keyedBy: CodingKeys.self)
         remoteHost = try c.decodeIfPresent(String.self, forKey: .remoteHost) ?? remoteHost
-        basePort = try c.decodeIfPresent(UInt16.self, forKey: .basePort) ?? basePort
+        // La porta messaggi è la base + 1: 65535 traboccherebbe.
+        basePort = min(max(try c.decodeIfPresent(UInt16.self, forKey: .basePort) ?? basePort, 1), 65534)
         localName = try c.decodeIfPresent(String.self, forKey: .localName) ?? localName
         machineID = try c.decodeIfPresent(UInt32.self, forKey: .machineID) ?? machineID
         edge = try c.decodeIfPresent(ScreenEdge.self, forKey: .edge) ?? edge
