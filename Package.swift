@@ -21,6 +21,6 @@ let package = Package(
         .testTarget(name: "MWBProtocolTests", dependencies: ["MWBProtocol"]),
         .testTarget(name: "MWBTransportTests", dependencies: ["MWBTransport", "MWBProtocol"]),
         .testTarget(name: "MWBInputCaptureTests", dependencies: ["MWBInputCapture"]),
-        .testTarget(name: "MWBEdgeLogicTests", dependencies: ["MWBEdgeLogic", "MWBProtocol"]),
+        .testTarget(name: "MWBEdgeLogicTests", dependencies: ["MWBEdgeLogic", "MWBProtocol", "MWBInputCapture"]),
     ]
 )

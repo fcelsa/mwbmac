@@ -196,3 +196,39 @@ public enum PhysicalKeyboard {
         KBGetLayoutType(Int16(LMGetKbdType())) == kKeyboardISO
     }
 }
+
+/// Blocco dello schermo del Mac. Non esiste un'API pubblica per bloccare lo schermo:
+/// si invia la scorciatoia di sistema ⌃⌘Q come evento sintetico (lo stesso che fa
+/// "System Events" con `keystroke "q" using {control down, command down}`). Gli eventi
+/// sono marcati, così il tap dell'app li lascia passare senza interpretarli.
+public enum SystemLock {
+    /// Valore di `eventSourceUserData` degli eventi generati qui ("MWBL").
+    public static let eventMarker: Int64 = 0x4D57_424C
+    /// Keycode macOS del tasto Q.
+    public static let qKeyCode: UInt16 = 0x0C
+
+    /// Vero se l'evento è la scorciatoia di blocco del Mac (⌃⌘Q, senza ⌥ né ⇧).
+    public static func isLockShortcut(_ event: CGEvent) -> Bool {
+        guard UInt16(truncatingIfNeeded: event.getIntegerValueField(.keyboardEventKeycode)) == qKeyCode else {
+            return false
+        }
+        let flags = event.flags
+        return flags.contains(.maskControl) && flags.contains(.maskCommand)
+            && !flags.contains(.maskAlternate) && !flags.contains(.maskShift)
+    }
+
+    public static func isOwnEvent(_ event: CGEvent) -> Bool {
+        event.getIntegerValueField(.eventSourceUserData) == eventMarker
+    }
+
+    /// Blocca lo schermo del Mac.
+    public static func lockScreen() {
+        let source = CGEventSource(stateID: .hidSystemState)
+        for isDown in [true, false] {
+            guard let event = CGEvent(keyboardEventSource: source, virtualKey: qKeyCode, keyDown: isDown) else { continue }
+            event.flags = [.maskControl, .maskCommand]
+            event.setIntegerValueField(.eventSourceUserData, value: eventMarker)
+            event.post(tap: .cghidEventTap)
+        }
+    }
+}

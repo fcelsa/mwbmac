@@ -34,6 +34,8 @@ public final class Controller {
     private var detector: EdgeDetector
     private var clipboard: ClipboardBridge?
     private var translator: InputTranslator
+    private var lockSync: LockSync
+    private var lastLock: TimeInterval = -1_000
 
     private var displays: [CGRect] = []
     private var displaysRefreshed: TimeInterval = 0
@@ -52,6 +54,7 @@ public final class Controller {
         self.detector = settings.makeEdgeDetector()
         self.translator = InputTranslator(keyMap: settings.makeKeyMap(isISOKeyboard: PhysicalKeyboard.isISO),
                                           invertScroll: settings.invertScroll)
+        self.lockSync = LockSync(letter: settings.lockAllLetter)
     }
 
     /// Da chiamare sul thread principale.
@@ -100,17 +103,30 @@ public final class Controller {
     // MARK: Eventi di input
 
     private func handle(type: CGEventType, event: CGEvent) -> InputTap.Disposition {
+        // Gli eventi generati dall'app stessa (blocco dello schermo) passano senza esame.
+        if SystemLock.isOwnEvent(event) { return .pass }
         // La scorciatoia di emergenza ha la precedenza su tutto e non dipende dalla rete.
         if type == .keyDown, isHotkey(event) {
             if event.getIntegerValueField(.keyboardEventAutorepeat) == 0 { toggle() }
             return .suppress
+        }
+        let isFreshKeyDown = type == .keyDown && event.getIntegerValueField(.keyboardEventAutorepeat) == 0
+        // ⌃⌘Q, la scorciatoia di blocco del Mac, blocca anche il PC.
+        if settings.syncLock, isFreshKeyDown, SystemLock.isLockShortcut(event) {
+            lockAll(fromRemote: state != .local)
+            // In locale l'evento prosegue e blocca il Mac; in remoto lo blocca `lockAll`.
+            return state == .local ? .pass : .suppress
         }
         switch state {
         case .local:
             if type == .mouseMoved { observeEdge(event) }
             return .pass
         case .remote(let machine):
+            // Win+L (o Ctrl+Alt+lettera) inviato al PC lo blocca: si blocca anche il Mac,
+            // come succede con un PC Windows al posto del Mac, dove Win+L non si intercetta.
+            let locksPC = settings.syncLock && isFreshKeyDown && pcWillLock(event)
             forward(type: type, event: event, to: machine)
+            if locksPC { lockMacAfterPC(machine) }
             return .suppress
         }
     }
@@ -294,9 +310,76 @@ public final class Controller {
         session.send(packet)
     }
 
+    // MARK: Blocco schermo
+
+    /// Blocca Mac e PC: al PC (e a ogni altra macchina) va la scorciatoia "blocca tutte le
+    /// macchine", poi si torna in locale e, se si era in remoto, si blocca il Mac.
+    private func lockAll(fromRemote: Bool) {
+        guard beginLock() else { return }
+        if !session.connectedMachines.isEmpty {
+            for key in lockSync.lockAllSequence() {
+                var packet = Packet(type: .keyboard, des: MachineID.all)
+                var keyboard = key
+                keyboard.dateTime = Int64(Date().timeIntervalSince1970 * 1000)
+                packet.keyboard = keyboard
+                session.send(packet)
+            }
+            log.info("Blocco schermo: scorciatoia Ctrl+Alt+\(lockSync.letter) inviata alle altre macchine")
+        }
+        if fromRemote {
+            returnToLocal(reason: "blocco schermo", at: exitPosition)
+            lockMacSoon()
+        }
+    }
+
+    private func lockMacAfterPC(_ machine: Session.Machine) {
+        guard beginLock() else { return }
+        log.info("Blocco schermo: \"\(machine.name)\" si blocca, blocco anche il Mac")
+        returnToLocal(reason: "blocco schermo", at: exitPosition)
+        lockMacSoon()
+    }
+
+    /// Una sola sequenza di blocco ogni pochi secondi: evita doppioni e rimbalzi.
+    private func beginLock() -> Bool {
+        let now = ProcessInfo.processInfo.systemUptime
+        guard now - lastLock > 3 else { return false }
+        lastLock = now
+        return true
+    }
+
+    /// Il blocco del Mac parte con un attimo di ritardo, perché i tasti per il PC siano
+    /// già usciti e il primo piano sia tornato all'applicazione precedente.
+    private func lockMacSoon() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { SystemLock.lockScreen() }
+    }
+
+    /// Vero se il tasto dell'evento, con i modificatori già premuti sul PC, lo bloccherà.
+    private func pcWillLock(_ event: CGEvent) -> Bool {
+        let code = UInt16(truncatingIfNeeded: event.getIntegerValueField(.keyboardEventKeycode))
+        guard let key = translator.keyMap.windowsKey(forMacKeyCode: code) else { return false }
+        return lockSync.locksPC(sending: key.vk, pressed: translator.pressedKeys)
+    }
+
+    /// Tasti ricevuti da un'altra macchina: il Mac non si lascia controllare, ma riconosce
+    /// la scorciatoia "blocca tutte le macchine" premuta due volte sul PC.
+    private func receivedKey(_ packet: Packet) {
+        guard settings.syncLock, packet.des == settings.machineID || packet.des == MachineID.all else { return }
+        let key = packet.keyboard
+        guard lockSync.observeIncoming(vk: key.vk, flags: key.flags, now: ProcessInfo.processInfo.systemUptime),
+              beginLock() else { return }
+        let name = session.connectedMachines.first { $0.id == packet.src }?.name ?? "PC"
+        log.info("Blocco schermo: \"\(name)\" ha bloccato tutte le macchine")
+        returnToLocal(reason: "blocco schermo", at: exitPosition)
+        lockMacSoon()
+    }
+
     // MARK: Pacchetti dal PC
 
     private func received(_ packet: Packet) {
+        if packet.type == .keyboard {
+            receivedKey(packet)
+            return
+        }
         guard case .remote(let machine) = state, packet.src == machine.id else { return }
         switch packet.type {
         case .nextMachine:

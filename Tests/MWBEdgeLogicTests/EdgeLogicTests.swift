@@ -3,6 +3,7 @@ import Foundation
 import AppKit
 import CoreGraphics
 import ImageIO
+import MWBInputCapture
 import MWBProtocol
 @testable import MWBEdgeLogic
 
@@ -225,5 +226,75 @@ struct SettingsTests {
         // La security key non fa parte delle preferenze.
         let saved = String(decoding: try JSONEncoder().encode(settings), as: UTF8.self)
         #expect(!saved.lowercased().contains("securitykey"))
+    }
+}
+
+struct LockSyncTests {
+    @Test func sequenceMatchesWhatPowerToysRecognizes() {
+        let sequence = LockSync(letter: "L").lockAllSequence()
+        // Ctrl, Alt, L giù; poi su in ordine inverso. Codici sinistri: `InputProcessKeyEx`
+        // traccia VK_LCONTROL/VK_RCONTROL e VK_LMENU/VK_RMENU.
+        #expect(sequence.map(\.vk) == [0xA2, 0xA4, 0x4C, 0x4C, 0xA4, 0xA2])
+        #expect(sequence.map(\.flags) == [0, 0, 0, 0x80, 0x80, 0x80])
+    }
+
+    @Test func letterIsValidatedAndUppercased() {
+        #expect(LockSync(letter: "k").letter == "K")
+        #expect(LockSync(letter: "k").letterVK == 0x4B)
+        for invalid in ["", "LL", "1", "é", "ß", " ", "€"] {
+            #expect(LockSync(letter: invalid).letter == "L", "\(invalid)")
+        }
+        #expect(LockSync(letter: " m ").letter == "M")
+    }
+
+    @Test func detectsOutgoingLockCombos() {
+        let sync = LockSync(letter: "K")
+        let win = [WindowsKey(VK.lWin, extended: true)]
+        let ctrlAlt = [WindowsKey(VK.lControl), WindowsKey(VK.lMenu)]
+        // Win+L blocca sempre il PC, qualunque sia la lettera impostata.
+        #expect(sync.locksPC(sending: 0x4C, pressed: win))
+        #expect(sync.locksPC(sending: 0x4B, pressed: ctrlAlt))
+        #expect(!sync.locksPC(sending: 0x4C, pressed: ctrlAlt))
+        #expect(!sync.locksPC(sending: 0x4B, pressed: [WindowsKey(VK.lControl)]))
+        #expect(!sync.locksPC(sending: 0x4C, pressed: []))
+        #expect(!sync.locksPC(sending: 0x4B, pressed: win))
+    }
+
+    /// Ciò che invia il PC quando si preme due volte la scorciatoia (`InputHook.ProcessHotKeys`):
+    /// VK_MENU, VK_CONTROL e la lettera giù, poi gli stessi su.
+    @Test func recognizesTheSequenceSentByPowerToys() {
+        var sync = LockSync(letter: "L")
+        let down: [Int32] = [0x12, 0x11, 0x4C]
+        var fired: [Bool] = []
+        for vk in down { fired.append(sync.observeIncoming(vk: vk, flags: 0, now: 10)) }
+        for vk in down { fired.append(sync.observeIncoming(vk: vk, flags: 0x80, now: 10)) }
+        #expect(fired == [false, false, true, false, false, false])
+        // Ripetuta più tardi, scatta di nuovo.
+        var again: [Bool] = []
+        for vk in down { again.append(sync.observeIncoming(vk: vk, flags: 0, now: 20)) }
+        #expect(again == [false, false, true])
+    }
+
+    @Test func doesNotFireOnPartialOrStaleModifiers() {
+        var sync = LockSync(letter: "L")
+        // Solo Ctrl.
+        _ = sync.observeIncoming(vk: 0xA2, flags: 0, now: 0)
+        let fired1 = sync.observeIncoming(vk: 0x4C, flags: 0, now: 0.1)
+        #expect(!fired1)
+        // Ctrl e Alt rilasciati prima della lettera.
+        _ = sync.observeIncoming(vk: 0xA4, flags: 0, now: 0.2)
+        _ = sync.observeIncoming(vk: 0xA4, flags: 0x80, now: 0.3)
+        let fired2 = sync.observeIncoming(vk: 0x4C, flags: 0, now: 0.4)
+        #expect(!fired2)
+        // Modificatori premuti e rilascio perso: dopo la pausa non contano più.
+        _ = sync.observeIncoming(vk: 0xA2, flags: 0, now: 1)
+        _ = sync.observeIncoming(vk: 0xA4, flags: 0, now: 1)
+        let fired3 = sync.observeIncoming(vk: 0x4C, flags: 0, now: 10)
+        #expect(!fired3)
+        // Altra lettera.
+        _ = sync.observeIncoming(vk: 0xA2, flags: 0, now: 20)
+        _ = sync.observeIncoming(vk: 0xA4, flags: 0, now: 20)
+        let fired4 = sync.observeIncoming(vk: 0x4B, flags: 0, now: 20)
+        #expect(!fired4)
     }
 }

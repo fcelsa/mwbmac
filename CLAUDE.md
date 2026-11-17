@@ -73,7 +73,10 @@ I test usano **Swift Testing** (`import Testing`), non XCTest: sulla macchina di
 ci sono solo i Command Line Tools, senza Xcode. Per lo stesso motivo in SwiftUI non si può
 usare `@State` (nell'SDK corrente è una macro e il plugin `SwiftUIMacros` manca): lo stato
 delle viste sta in `ObservableObject` con `@Published`. Ogni tanto `swift test` fallisce con
-"plugin for module 'TestingMacros' not found": è transitorio, basta rilanciarlo.
+"plugin for module 'TestingMacros' not found": il dependency scanner a volte omette il
+plugin. Rimedio affidabile:
+`swift test -Xswiftc -load-plugin-library -Xswiftc /Library/Developer/CommandLineTools/usr/lib/swift/host/plugins/testing/libTestingMacros.dylib`.
+Dentro `#expect(...)` non si possono chiamare metodi `mutating`: assegnare prima a una costante.
 
 Il sorgente in `reference/` è più recente di quello descritto in `docs/analisi.md`:
 dopo l'intestazione in chiaro salt+IV, il primo blocco cifrato di ogni direzione è un
@@ -107,6 +110,12 @@ byte con 48 byte di dati agli offset 16..63, poi `ClipboardDataEnd`); oltre, pac
 - il pacchetto di saluto del canale appunti non porta magic né checksum, e PowerToys
   confronta l'intero campo tipo a 32 bit: se i byte 1..3 non sono zero scarta la
   connessione lasciandola aperta, senza alcun errore visibile dal Mac.
+
+Blocco schermo (`LockSync`): sul filo non c'è un pacchetto "blocca". Per bloccare il PC si
+inviano a ALL i tasti VK_LCONTROL, VK_LMENU, lettera (giù e su): `InputProcessKeyEx` del PC
+li riconosce e chiama `LockWorkStation`. Il PC che preme due volte la scorciatoia invia
+invece VK_MENU, VK_CONTROL, lettera (codici generici) a ALL. Il Mac si blocca con un ⌃⌘Q
+sintetico marcato in `eventSourceUserData`, che il tap lascia passare.
 
 Mai provare la connessione al PC con una chiave sbagliata: dopo dieci pacchetti non
 validi PowerToys marca `InvalidKeyFound` e smette di aprire connessioni client.

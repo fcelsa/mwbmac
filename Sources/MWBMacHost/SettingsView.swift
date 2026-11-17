@@ -74,6 +74,13 @@ struct SettingsView: View {
             Section("Appunti") {
                 Toggle("Condividi gli appunti con il PC (testo e immagini)", isOn: $state.settings.shareClipboard)
             }
+            Section("Blocco schermo") {
+                Toggle("Blocca insieme Mac e PC", isOn: $state.settings.syncLock)
+                TextField("Lettera di \"blocca tutte le macchine\" (Ctrl+Alt+…)", text: $state.settings.lockAllLetter)
+                    .disabled(!state.settings.syncLock)
+                Text("⌃⌘Q sul Mac blocca anche il PC; Win+L inviato al PC o Ctrl+Alt+lettera premuto due volte sul PC bloccano anche il Mac. La lettera deve essere quella impostata in Mouse Without Borders sul PC.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
             if model.status == .missingPermissions {
                 Section("Permessi") {
                     permissionRow("Accessibilità", granted: model.hasAccessibility, pane: "Privacy_Accessibility")
@@ -200,6 +207,12 @@ struct SettingsView: View {
         state.settings.basePort = port
         state.settings.remoteHost = state.settings.remoteHost.trimmingCharacters(in: .whitespaces)
         state.settings.localName = String(state.settings.localName.trimmingCharacters(in: .whitespaces).prefix(32))
+        let letter = state.settings.lockAllLetter.trimmingCharacters(in: .whitespaces)
+        guard letter.count == 1, let first = letter.first, first.isASCII, first.isLetter else {
+            show("La lettera di blocco deve essere una sola lettera A–Z", error: true)
+            return
+        }
+        state.settings.lockAllLetter = letter.uppercased()
         guard !state.settings.localName.isEmpty else {
             show("Il nome del Mac non può essere vuoto", error: true)
             return

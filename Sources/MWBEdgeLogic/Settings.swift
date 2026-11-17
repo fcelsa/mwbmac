@@ -69,6 +69,12 @@ public struct Settings: Codable, Equatable, Sendable {
     public var hotkey: Hotkey
     /// Condivisione degli appunti (testo e immagini) nelle due direzioni.
     public var shareClipboard: Bool
+    /// Blocco schermo sincronizzato: ⌃⌘Q sul Mac blocca anche il PC, e la scorciatoia
+    /// "blocca tutte le macchine" del PC blocca anche il Mac.
+    public var syncLock: Bool
+    /// Lettera della scorciatoia Ctrl+Alt+lettera "blocca tutte le macchine"; deve essere
+    /// la stessa impostata nel Mouse Without Borders del PC.
+    public var lockAllLetter: String
 
     public init() {
         remoteHost = ""
@@ -88,6 +94,8 @@ public struct Settings: Codable, Equatable, Sendable {
         invertScroll = false
         hotkey = Hotkey()
         shareClipboard = true
+        syncLock = true
+        lockAllLetter = "L"
     }
 
     /// Le chiavi assenti nel file prendono il valore predefinito, così le versioni
@@ -112,6 +120,8 @@ public struct Settings: Codable, Equatable, Sendable {
         invertScroll = try c.decodeIfPresent(Bool.self, forKey: .invertScroll) ?? invertScroll
         hotkey = try c.decodeIfPresent(Hotkey.self, forKey: .hotkey) ?? hotkey
         shareClipboard = try c.decodeIfPresent(Bool.self, forKey: .shareClipboard) ?? shareClipboard
+        syncLock = try c.decodeIfPresent(Bool.self, forKey: .syncLock) ?? syncLock
+        lockAllLetter = try c.decodeIfPresent(String.self, forKey: .lockAllLetter) ?? lockAllLetter
     }
 
     public var activeRange: ClosedRange<Double> {
