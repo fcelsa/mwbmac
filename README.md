@@ -75,6 +75,14 @@ dallo stop. Le preferenze `syncLock` e `lockAllShortcut` (predefinite `true` e `
 regolano; la scorciatoia deve coincidere con quella impostata nel Mouse Without Borders
 del PC.
 
+### Schermata di blocco e di accesso di Windows
+
+Il controllo funziona anche sulla schermata di blocco e su quella di accesso del PC, e si
+può digitare la password. Quando Windows cambia desktop (blocco, sblocco, click sulla
+schermata di blocco) Mouse Without Borders chiude tutte le connessioni e si ricollega in
+meno di un secondo: il Mac resta in controllo del PC per 3 s in attesa che si ricolleghi,
+come fa PowerToys fra due PC, e torna al Mac solo se il PC non ricompare.
+
 ## Compilazione e test
 
 ```bash
@@ -102,7 +110,7 @@ Sul Mac, una volta sola:
 chiede la security key di MWB (senza mostrarla) e la salva nel Keychain.
 
 ```bash
-.build/debug/mwbmac config --host winpc --edge right
+.build/debug/mwbmac config --host nomepc --edge right
 ```
 
 salva nome del PC e bordo in `~/Library/Application Support/mwbmac/config.json`.
