@@ -138,7 +138,10 @@ da `L("testo inglese", argomenti…)`, che legge `Bundle.main` (le cartelle `.lp
 escluse da SwiftPM e copiate nel bundle da `build-app.sh`); nelle viste SwiftUI si passa
 sempre la `String` di `L(...)`. Ogni nuovo testo va tradotto in
 `Resources/it.lproj/Localizable.strings`: `scripts/check-localization.sh` lo verifica.
-Log e riga di comando restano in italiano.
+Log e riga di comando sono solo in inglese (diagnosi), commenti e documentazione interna in
+italiano. Livelli di `Log`: `error` e `notice` (avvio, prima connessione con ciascuna
+macchina nel processo) sempre; `info` e `debug` solo con `--verbose` o
+`defaults write local.mwbmac.host verbose -bool true`.
 
 Stop del Mac: `AppModel` (e `Runner` in `mwbmac run`) chiude la sessione a
 `willSleepNotification` (ByeBye al PC) e la riapre a `didWakeNotification`. Opzioni del

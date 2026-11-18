@@ -91,6 +91,17 @@ public final class Session: @unchecked Sendable {
     private let stateLock = NSLock()
     private var connectedSnapshot: [Machine] = []
 
+    /// Macchine già viste in questo processo: solo la prima connessione con ciascuna va nel
+    /// log normale, le riconnessioni (stop, cambio di desktop sul PC) solo in modo verboso.
+    private static let greetedLock = NSLock()
+    private static var greeted = Set<String>()
+
+    static func firstConnection(to name: String) -> Bool {
+        greetedLock.lock()
+        defer { greetedLock.unlock() }
+        return greeted.insert(name.lowercased()).inserted
+    }
+
     public init(configuration: Configuration, log: Log = Log()) {
         let key = KeyDerivation.normalize(securityKey: configuration.securityKey)
         self.configuration = configuration
@@ -197,7 +208,7 @@ public final class Session: @unchecked Sendable {
                 }
                 let pending = self.peers.filter { !$0.isOutgoing && !$0.isTrusted && !$0.isClosed }.count
                 guard self.messageAdmission.admit(pending: pending, now: ProcessInfo.processInfo.systemUptime) else {
-                    self.log.debug("Connessione entrante da \(connection.endpoint) rifiutata: troppe connessioni non autenticate")
+                    self.log.debug("Incoming connection from \(connection.endpoint) refused: too many unauthenticated connections")
                     connection.cancel()
                     return
                 }
@@ -205,15 +216,15 @@ public final class Session: @unchecked Sendable {
             }
             listener.stateUpdateHandler = { [weak self] state in
                 switch state {
-                case .ready: self?.log.info("In ascolto sulla porta \(port)")
-                case .failed(let error): self?.log.info("Listener sulla porta \(port) fallito: \(error)")
+                case .ready: self?.log.info("Listening on port \(port)")
+                case .failed(let error): self?.log.error("Listener on port \(port) failed: \(error)")
                 default: break
                 }
             }
             listener.start(queue: queue)
             self.listener = listener
         } catch {
-            log.info("Impossibile aprire il listener sulla porta \(port): \(error)")
+            log.error("Cannot open the listener on port \(port): \(error)")
         }
     }
 
@@ -223,7 +234,7 @@ public final class Session: @unchecked Sendable {
         guard Date().timeIntervalSince(lastConnectAttempt) >= configuration.reconnectInterval else { return }
         guard let port = NWEndpoint.Port(rawValue: configuration.basePort + 1) else { return }
         lastConnectAttempt = Date()
-        log.debug("Connessione a \(host):\(port)…")
+        log.debug("Connecting to \(host):\(port)…")
         let connection = NWConnection(host: NWEndpoint.Host(host), port: port, using: Session.tcpParameters())
         adopt(connection, isOutgoing: true)
     }
@@ -244,13 +255,13 @@ public final class Session: @unchecked Sendable {
         peer.onClosed = { [weak self] peer, reason in self?.peerClosed(peer, reason) }
         peer.onClipboard = { [weak self] payload, peer in self?.receivedClipboard(payload, from: peer.remoteID) }
         peers.append(peer)
-        if !isOutgoing { log.debug("Connessione entrante da \(connection.endpoint)") }
+        if !isOutgoing { log.debug("Incoming connection from \(connection.endpoint)") }
         peer.start()
     }
 
     private func peerTrusted(_ peer: PeerConnection) {
         if peer.remoteID == configuration.machineID {
-            log.info("\(peer.label): stesso MachineId del Mac o connessione a se stessi, chiudo")
+            log.error("\(peer.label): same MachineId as this Mac, or a connection to itself: closing")
             peer.close(.local)
             return
         }
@@ -258,12 +269,16 @@ public final class Session: @unchecked Sendable {
         let machine = Machine(id: peer.remoteID, name: peer.remoteName)
         let isNew = pool[machine.id] == nil
         pool[machine.id] = machine
-        log.debug("\(peer.label): fidata, macchina \"\(machine.name)\" id \(machine.id)")
+        log.debug("\(peer.label): trusted, machine \"\(machine.name)\" id \(machine.id)")
         refreshSnapshot()
         // Come `Common.SendHeartBeat(initial: true)` dopo la fiducia.
         sendHeartbeat()
         if isNew {
-            log.info("Connesso a \"\(machine.name)\" (id \(machine.id))")
+            if Session.firstConnection(to: machine.name) {
+                log.notice("Connected to \"\(machine.name)\" (id \(machine.id))")
+            } else {
+                log.info("Connected to \"\(machine.name)\" (id \(machine.id))")
+            }
             onMachineConnected?(machine)
         }
     }
@@ -272,7 +287,7 @@ public final class Session: @unchecked Sendable {
         peers.removeAll { $0 === peer }
         if case .invalidKey = reason {
             if !invalidKeyLatched {
-                log.info("\(peer.label): \(reason). Non riprovo: correggere la chiave con `mwbmac set-key` e rilanciare.")
+                log.error("\(peer.label): \(reason). Not retrying: fix the key with `mwbmac set-key` (or in Settings) and restart.")
             }
             invalidKeyLatched = true
             onInvalidKey?()
@@ -283,7 +298,7 @@ public final class Session: @unchecked Sendable {
         let stillConnected = peers.contains { $0.isTrusted && $0.remoteID == peer.remoteID }
         if !stillConnected, let machine = pool.removeValue(forKey: peer.remoteID) {
             refreshSnapshot()
-            log.info("Connessione con \"\(machine.name)\" persa")
+            log.info("Connection with \"\(machine.name)\" lost")
             onMachineDisconnected?(machine)
         }
     }
@@ -305,7 +320,7 @@ public final class Session: @unchecked Sendable {
         queue.async { [self] in
             guard running else { return }
             guard payload.data.count <= ClipboardPayload.maxSize else {
-                log.info("Appunti non inviati: \(payload.data.count / (1024 * 1024)) MB superano il limite di 100 MB")
+                log.info("Clipboard not sent: \(payload.data.count / (1024 * 1024)) MB exceeds the 100 MB limit")
                 return
             }
             // Solo i contenuti grandi vengono richiesti in seguito sul canale appunti; quelli
@@ -313,10 +328,10 @@ public final class Session: @unchecked Sendable {
             localClipboard = payload.isInline ? nil : payload
             deliveredTo.removeAll()
             if payload.isInline {
-                log.debug("Appunti (\(payload.kind.rawValue), \(payload.data.count) byte) inviati in linea")
+                log.debug("Clipboard (\(payload.kind.rawValue), \(payload.data.count) bytes) sent inline")
                 payload.inlinePackets().forEach { broadcast($0) }
             } else {
-                log.debug("Appunti (\(payload.kind.rawValue), \(payload.data.count) byte) annunciati")
+                log.debug("Clipboard (\(payload.kind.rawValue), \(payload.data.count) bytes) announced")
                 announceClipboard()
                 if let activeMachine { broadcast(Packet(type: .machineSwitched, des: activeMachine)) }
             }
@@ -347,22 +362,22 @@ public final class Session: @unchecked Sendable {
                     return
                 }
                 guard self.clipboardAdmission.admit(pending: self.transfers.count, now: ProcessInfo.processInfo.systemUptime) else {
-                    self.log.debug("Canale appunti: connessione da \(connection.endpoint) rifiutata: troppe connessioni")
+                    self.log.debug("Clipboard channel: connection from \(connection.endpoint) refused: too many connections")
                     connection.cancel()
                     return
                 }
-                self.log.debug("Canale appunti: connessione entrante da \(connection.endpoint)")
+                self.log.debug("Clipboard channel: incoming connection from \(connection.endpoint)")
                 self.startTransfer(connection, role: .serve(self.localClipboard))
             }
             listener.stateUpdateHandler = { [weak self] state in
                 if case .failed(let error) = state {
-                    self?.log.info("Listener degli appunti sulla porta \(port) fallito: \(error)")
+                    self?.log.error("Clipboard listener on port \(port) failed: \(error)")
                 }
             }
             listener.start(queue: queue)
             clipboardListener = listener
         } catch {
-            log.info("Impossibile aprire il listener degli appunti sulla porta \(port): \(error)")
+            log.error("Cannot open the clipboard listener on port \(port): \(error)")
         }
     }
 
@@ -378,14 +393,14 @@ public final class Session: @unchecked Sendable {
         guard pool[machineID] != nil, !pullsInProgress.contains(machineID),
               let connection = clipboardConnection(to: machineID) else { return }
         pullsInProgress.insert(machineID)
-        log.debug("Canale appunti: richiesta dei dati a \(pool[machineID]?.name ?? "?")")
+        log.debug("Clipboard channel: pulling data from \(pool[machineID]?.name ?? "?")")
         startTransfer(connection, role: .pull, pullingFrom: machineID)
     }
 
     private func pushClipboard(to machineID: UInt32) {
         guard let payload = localClipboard, pool[machineID] != nil,
               let connection = clipboardConnection(to: machineID) else { return }
-        log.debug("Canale appunti: invio dei dati a \(pool[machineID]?.name ?? "?") su sua richiesta")
+        log.debug("Clipboard channel: sending data to \(pool[machineID]?.name ?? "?") on request")
         startTransfer(connection, role: .push(payload))
     }
 
@@ -402,7 +417,7 @@ public final class Session: @unchecked Sendable {
                     self.receivedClipboard(payload, from: machineID)
                 case .sent(let machineID, let bytes):
                     self.deliveredTo.insert(machineID)
-                    self.log.debug("\(transfer.label): inviati \(bytes) byte")
+                    self.log.debug("\(transfer.label): sent \(bytes) bytes")
                 case .failed(let reason):
                     self.log.debug("\(transfer.label): \(reason)")
                 }
@@ -426,7 +441,7 @@ public final class Session: @unchecked Sendable {
         let digest = hasher.finalize()
         if let last = lastReceivedDigest, last.digest == digest, Date().timeIntervalSince(last.time) < 3 { return }
         lastReceivedDigest = (digest, Date())
-        log.debug("Appunti ricevuti da \(machine.name): \(payload.kind.rawValue), \(payload.data.count) byte")
+        log.debug("Clipboard received from \(machine.name): \(payload.kind.rawValue), \(payload.data.count) bytes")
         onClipboardReceived?(payload, machine)
     }
 
@@ -437,7 +452,7 @@ public final class Session: @unchecked Sendable {
         connectIfNeeded()
         // Connessioni mai arrivate alla fiducia (peer muto, chiave errata senza dati…).
         for peer in peers where !peer.isTrusted && Date().timeIntervalSince(peer.createdAt) > 15 {
-            peer.close(.network("handshake non completato in tempo"))
+            peer.close(.network("handshake not completed in time"))
         }
         if Date().timeIntervalSince(lastHeartbeat) >= configuration.heartbeatInterval {
             sendHeartbeat()

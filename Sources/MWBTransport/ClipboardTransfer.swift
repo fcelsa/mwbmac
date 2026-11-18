@@ -73,7 +73,7 @@ final class ClipboardTransfer {
         self.queue = queue
         self.isKnownMachine = isKnownMachine
         self.completion = completion
-        self.label = "appunti \(connection.endpoint)"
+        self.label = "clipboard \(connection.endpoint)"
     }
 
     /// Il gestore di stato di `NWConnection` trattiene la connessione stessa: se il
@@ -91,8 +91,8 @@ final class ClipboardTransfer {
             guard let self else { return }
             switch state {
             case .ready: self.didBecomeReady()
-            case .failed(let error): self.finish(.failed("errore di rete: \(error)"))
-            case .waiting(let error): self.finish(.failed("connessione non riuscita: \(error)"))
+            case .failed(let error): self.finish(.failed("network error: \(error)"))
+            case .waiting(let error): self.finish(.failed("connection failed: \(error)"))
             case .cancelled: self.finish(.failed("annullata"))
             default: break
             }
@@ -103,7 +103,7 @@ final class ClipboardTransfer {
         timer.setEventHandler { [weak self] in
             guard let self, !self.finished else { return }
             if Date().timeIntervalSince(self.lastActivity) > ClipboardTransfer.inactivityTimeout {
-                self.finish(.failed("nessuna attività per \(Int(ClipboardTransfer.inactivityTimeout)) s"))
+                self.finish(.failed("no activity for \(Int(ClipboardTransfer.inactivityTimeout)) s"))
             }
         }
         timer.resume()
@@ -166,11 +166,11 @@ final class ClipboardTransfer {
             .replacingOccurrences(of: "\0", with: "")
         guard type == .clipboard || type == .clipboardPush else {
             // Con la chiave sbagliata il saluto è rumore.
-            finish(.failed("saluto non valido (tipo \(bytes[0]))"))
+            finish(.failed("invalid greeting (type \(bytes[0]))"))
             return
         }
         guard isKnownMachine(peerID, peerName) else {
-            finish(.failed("\"\(peerName)\" (id \(peerID)) non è una macchina connessa"))
+            finish(.failed("\"\(peerName)\" (id \(peerID)) is not a connected machine"))
             return
         }
         switch role {
@@ -184,7 +184,7 @@ final class ClipboardTransfer {
             } else if let payload {
                 send(payload)
             } else {
-                finish(.failed("\"\(peerName)\" chiede gli appunti ma non c'è nulla da inviare"))
+                finish(.failed("\"\(peerName)\" asks for the clipboard but there is nothing to send"))
             }
         }
     }
@@ -298,16 +298,16 @@ final class ClipboardTransfer {
                 let header = Array(plainBuffer[0..<ClipboardPayload.transferHeaderSize])
                 plainBuffer.removeFirst(ClipboardPayload.transferHeaderSize)
                 guard let parsed = ClipboardPayload.parseTransferHeader(header) else {
-                    finish(.failed("intestazione dei dati non valida"))
+                    finish(.failed("invalid data header"))
                     return
                 }
                 guard let kind = ClipboardPayload.kind(forTransferName: parsed.name) else {
                     // File o cartella: fuori perimetro, si chiude prima di riceverlo.
-                    finish(.failed("\"\(peerName)\" offre un file, non gestito: \(parsed.name)"))
+                    finish(.failed("\"\(peerName)\" offers a file, not supported: \(parsed.name)"))
                     return
                 }
                 guard parsed.size > 0, parsed.size <= ClipboardPayload.maxSize else {
-                    finish(.failed("dimensione non accettabile: \(parsed.size) byte"))
+                    finish(.failed("unacceptable size: \(parsed.size) bytes"))
                     return
                 }
                 body.reserveCapacity(parsed.size)
@@ -333,15 +333,15 @@ final class ClipboardTransfer {
             // PowerToys può perdere gli ultimi byte (blocco AES incompleto mai inviato):
             // se manca poco si consegna comunque, la decodifica a valle sa ripararlo.
             if size - body.count < KeyDerivation.blockSize, !body.isEmpty {
-                context.log.debug("\(label): ricevuti \(body.count) byte su \(size), consegno comunque")
+                context.log.debug("\(label): received \(body.count) of \(size) bytes, delivering anyway")
                 deliver(kind: kind)
             } else {
                 finish(.failed("trasferimento interrotto a \(body.count) byte su \(size)"))
             }
         case .sending:
-            if pendingSent != nil { completeSend() } else { finish(.failed("chiusa dal peer durante l'invio")) }
+            if pendingSent != nil { completeSend() } else { finish(.failed("closed by the peer while sending")) }
         default:
-            finish(.failed("chiusa dal peer"))
+            finish(.failed("closed by the peer"))
         }
     }
 

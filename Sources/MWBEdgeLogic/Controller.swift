@@ -187,7 +187,7 @@ public final class Controller {
             enterRemote(fraction: 0.5, from: position, viaHotkey: true)
         case .remote:
             // Emergenza: il cursore torna dov'era prima di passare al PC.
-            returnToLocal(reason: "scorciatoia \(settings.hotkey.description)", at: exitPosition)
+            returnToLocal(reason: "shortcut \(settings.hotkey.description)", at: exitPosition)
         }
     }
 
@@ -204,7 +204,7 @@ public final class Controller {
         if settings.disableInFullScreen, let display, FullScreenApp.covers(display) {
             if now - lastFullScreenNotice > 10 {
                 lastFullScreenNotice = now
-                log.info("App a tutto schermo in primo piano: il bordo non porta al PC (resta la scorciatoia \(settings.hotkey.description))")
+                log.info("Full-screen app in front: the edge does not lead to the PC (the shortcut \(settings.hotkey.description) still does)")
             }
             return
         }
@@ -232,15 +232,15 @@ public final class Controller {
     private func enterRemote(fraction: Double, from position: CGPoint, viaHotkey: Bool) {
         guard case .local = state else { return }
         guard let machine = targetMachine() else {
-            if viaHotkey { log.info("Nessun PC connesso: resto sul Mac") }
+            if viaHotkey { log.info("No PC connected: staying on the Mac") }
             return
         }
         exitPosition = position
         enteredRemoteAt = ProcessInfo.processInfo.systemUptime
         state = .remote(machine)
         LocalCursor.capture { [log] captured in
-            log.debug(captured ? "cursore locale nascosto e bloccato"
-                               : "cursore locale non bloccato: l'app non è riuscita a passare in primo piano")
+            log.debug(captured ? "local cursor hidden and locked"
+                               : "local cursor not locked: the app could not come to the front")
         }
 
         // `PrepareToSwitchToMachine`: MachineSwitched alla nuova destinazione, poi il
@@ -252,7 +252,7 @@ public final class Controller {
             let entry = detector.entryPoint(fraction: fraction)
             sendMouse(translator.mouseMoveAbsolute(x: entry.x, y: entry.y), to: machine)
         }
-        log.info("→ controllo passato a \"\(machine.name)\" (ritorno di emergenza: \(settings.hotkey.description))")
+        log.info("→ control passed to \"\(machine.name)\" (emergency return: \(settings.hotkey.description))")
         onStateChange?(state)
     }
 
@@ -270,7 +270,7 @@ public final class Controller {
 
         LocalCursor.release(at: point)
         detector.disarm()
-        log.info("← controllo tornato al Mac (\(reason))")
+        log.info("← control back on the Mac (\(reason))")
         onStateChange?(state)
     }
 
@@ -365,7 +365,7 @@ public final class Controller {
                 packet.keyboard = keyboard
                 session.send(packet)
             }
-            log.info("Blocco schermo: scorciatoia \(lockSync.shortcut) inviata alle altre macchine")
+            log.info("Screen lock: shortcut \(lockSync.shortcut) sent to the other machines")
         }
         if fromRemote {
             returnToLocal(reason: "blocco schermo", at: exitPosition)
@@ -375,7 +375,7 @@ public final class Controller {
 
     private func lockMacAfterPC(_ machine: Session.Machine) {
         guard beginLock() else { return }
-        log.info("Blocco schermo: \"\(machine.name)\" si blocca, blocco anche il Mac")
+        log.info("Screen lock: \"\(machine.name)\" is locking, locking the Mac too")
         returnToLocal(reason: "blocco schermo", at: exitPosition)
         lockMacSoon()
     }
@@ -409,7 +409,7 @@ public final class Controller {
         guard lockSync.observeIncoming(vk: key.vk, flags: key.flags, now: ProcessInfo.processInfo.systemUptime),
               beginLock() else { return }
         let name = session.connectedMachines.first { $0.id == packet.src }?.name ?? "PC"
-        log.info("Blocco schermo: \"\(name)\" ha bloccato tutte le macchine")
+        log.info("Screen lock: \"\(name)\" locked all machines")
         returnToLocal(reason: "blocco schermo", at: exitPosition)
         lockMacSoon()
     }
@@ -437,9 +437,9 @@ public final class Controller {
             let fraction = detector.returnFraction(x: packet.mouse.x, y: packet.mouse.y)
             let display = exitDisplay.flatMap { displays.contains($0) ? $0 : nil } ?? detector.outermostDisplay(in: displays)
             let point = display.map { detector.returnPoint(fraction: fraction, on: $0) } ?? exitPosition
-            returnToLocal(reason: "NextMachine da \"\(machine.name)\"", at: point)
+            returnToLocal(reason: "NextMachine from \"\(machine.name)\"", at: point)
         case .byeBye:
-            returnToLocal(reason: "\"\(machine.name)\" ha chiuso la sessione", at: exitPosition)
+            returnToLocal(reason: "\"\(machine.name)\" closed the session", at: exitPosition)
         default:
             break
         }
@@ -454,11 +454,11 @@ public final class Controller {
         // Il processo del PC che subentra non conosce i tasti premuti finora: si azzera lo
         // stato, così i rilasci successivi non vengono inviati.
         _ = translator.releaseAll()
-        log.info("Connessione con \"\(machine.name)\" persa: attendo la riconnessione per \(Int(Controller.reconnectGrace)) s")
+        log.info("Connection with \"\(machine.name)\" lost: waiting \(Int(Controller.reconnectGrace)) s for it to reconnect")
         let timeout = DispatchWorkItem { [weak self] in
             guard let self else { return }
             self.reconnectTimeout = nil
-            self.returnToLocal(reason: "connessione persa", at: self.exitPosition)
+            self.returnToLocal(reason: "connection lost", at: self.exitPosition)
         }
         reconnectTimeout = timeout
         DispatchQueue.main.asyncAfter(deadline: .now() + Controller.reconnectGrace, execute: timeout)
@@ -473,7 +473,7 @@ public final class Controller {
         timeout.cancel()
         reconnectTimeout = nil
         state = .remote(machine)
-        log.info("\"\(machine.name)\" di nuovo connesso: il controllo prosegue")
+        log.info("\"\(machine.name)\" reconnected: control continues")
         if machine != current { onStateChange?(state) }
     }
 }

@@ -206,7 +206,7 @@ public struct Packet: Equatable, Sendable {
 extension Packet: CustomStringConvertible {
     /// Forma leggibile per il log del protocollo in chiaro.
     public var description: String {
-        let typeName = type.map { "\($0)" } ?? "sconosciuto"
+        let typeName = type.map { "\($0)" } ?? "unknown"
         var text = "\(typeName)(\(rawType)) id=\(id) src=\(src) des=\(des)"
         switch type {
         case .mouse, .nextMachine:
@@ -224,7 +224,7 @@ extension Packet: CustomStringConvertible {
         }
         switch type {
         case .clipboardText, .clipboardImage, .clipboardDataEnd: break
-        default: if isBig { text += " nome=\"\(machineName)\"" }
+        default: if isBig { text += " name=\"\(machineName)\"" }
         }
         return text
     }

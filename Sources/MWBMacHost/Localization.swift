@@ -12,7 +12,7 @@
 // - nelle viste SwiftUI si passa sempre il risultato di `L(...)`, una `String` mostrata
 //   così com'è, per non mescolare due meccanismi di traduzione;
 // - `scripts/check-localization.sh` segnala le chiavi senza traduzione.
-// I messaggi di log e lo strumento da riga di comando restano in italiano: sono diagnosi.
+// I messaggi di log e lo strumento da riga di comando sono solo in inglese: sono diagnosi.
 
 import Foundation
 

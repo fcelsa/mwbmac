@@ -83,17 +83,17 @@ public final class ClipboardBridge: NSObject, NSPasteboardItemDataProvider {
         let types = pasteboard.types ?? []
         let rawTypes = Set(types.map(\.rawValue))
         guard rawTypes.isDisjoint(with: ClipboardBridge.confidentialTypes) else {
-            log.debug("Appunti riservati (gestore di password): non inviati")
+            log.debug("Concealed clipboard (password manager): not sent")
             return
         }
         guard !types.contains(.fileURL) else {
-            log.debug("Appunti con file: non inviati (trasferimento file non gestito)")
+            log.debug("Clipboard with files: not sent (file transfer not supported)")
             return
         }
 
         if let plain = pasteboard.string(forType: .string), !plain.isEmpty {
             guard plain.utf16.count * 2 <= ClipboardBridge.maxTextBytes else {
-                log.info("Testo negli appunti troppo grande, non inviato")
+                log.info("Clipboard text too large, not sent")
                 return
             }
             let rtf = pasteboard.data(forType: .rtf).flatMap { String(data: $0, encoding: .utf8) ?? String(data: $0, encoding: .windowsCP1252) }
@@ -102,7 +102,7 @@ public final class ClipboardBridge: NSObject, NSPasteboardItemDataProvider {
                 let text = ClipboardText(plain: ClipboardText.windowsLineEndings(plain), rtf: rtf,
                                          html: html.map(CFHTML.wrap))
                 self?.publish(ClipboardPayload(kind: .text, data: text.encoded()), generation: generation,
-                              description: "testo, \(plain.count) caratteri")
+                              description: "text, \(plain.count) characters")
             }
             return
         }
@@ -122,11 +122,11 @@ public final class ClipboardBridge: NSObject, NSPasteboardItemDataProvider {
             worker.async { [weak self] in
                 guard let self else { return }
                 guard let png = ClipboardBridge.normalizedPNG(from: data) else {
-                    self.log.info("Immagine negli appunti non leggibile (\(type.rawValue)), non inviata")
+                    self.log.info("Clipboard image unreadable (\(type.rawValue)), not sent")
                     return
                 }
                 self.publish(ClipboardPayload(kind: .image, data: [UInt8](png)), generation: generation,
-                             description: "immagine, \(png.count / 1024) KB")
+                             description: "image, \(png.count / 1024) KB")
             }
         }
     }
@@ -142,7 +142,7 @@ public final class ClipboardBridge: NSObject, NSPasteboardItemDataProvider {
             // Una copia più recente ha superato questa; contenuto identico all'ultimo inviato.
             guard generation == self.generation, digest != lastSentDigest else { return }
             lastSentDigest = digest
-            log.info("Appunti → PC: \(description)")
+            log.info("Clipboard → PC: \(description)")
             session.sendClipboard(payload, activeMachine: activeMachine())
         }
     }
@@ -154,7 +154,7 @@ public final class ClipboardBridge: NSObject, NSPasteboardItemDataProvider {
         switch payload.kind {
         case .text:
             guard let text = try? ClipboardText(decoding: payload.data) else {
-                log.info("Testo ricevuto da \(machine.name) non decodificabile, ignorato")
+                log.info("Text received from \(machine.name) cannot be decoded, ignored")
                 return
             }
             let plain = text.plain.map(ClipboardText.macLineEndings)
@@ -166,7 +166,7 @@ public final class ClipboardBridge: NSObject, NSPasteboardItemDataProvider {
                 if let html { item.setString(html, forType: .html) }
                 guard !item.types.isEmpty else { return }
                 write([item])
-                log.info("Appunti ← \(machine.name): testo, \((plain ?? html ?? "").count) caratteri")
+                log.info("Clipboard ← \(machine.name): text, \((plain ?? html ?? "").count) characters")
             }
         case .image:
             // PowerToys invia sempre PNG (con zeri in coda). Dalla rete si accetta solo quello:
@@ -175,7 +175,7 @@ public final class ClipboardBridge: NSObject, NSPasteboardItemDataProvider {
             guard let sanitized = PNGData.sanitized(payload.data),
                   let png = ClipboardBridge.normalizedPNG(from: Data(sanitized), convertToSRGB: false,
                                                           allowVectorFallback: false) else {
-                log.info("Immagine ricevuta da \(machine.name) non decodificabile (\(payload.data.count) byte), ignorata")
+                log.info("Image received from \(machine.name) cannot be decoded (\(payload.data.count) bytes), ignored")
                 return
             }
             DispatchQueue.main.async { [self] in
@@ -186,7 +186,7 @@ public final class ClipboardBridge: NSObject, NSPasteboardItemDataProvider {
                 promisedImage = png
                 item.setDataProvider(self, forTypes: [.tiff])
                 write([item])
-                log.info("Appunti ← \(machine.name): immagine, \(png.count / 1024) KB")
+                log.info("Clipboard ← \(machine.name): image, \(png.count / 1024) KB")
             }
         }
     }

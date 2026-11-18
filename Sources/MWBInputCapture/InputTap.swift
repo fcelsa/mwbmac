@@ -12,8 +12,8 @@ public enum InputTapError: Error, CustomStringConvertible {
     case creationFailed
 
     public var description: String {
-        "impossibile creare il tap degli eventi: manca il permesso Accessibilità "
-            + "(Impostazioni di Sistema → Privacy e sicurezza → Accessibilità) per l'app che lancia mwbmac"
+        "cannot create the event tap: the Accessibility permission is missing "
+            + "(System Settings → Privacy & Security → Accessibility) for the app that launches mwbmac"
     }
 }
 

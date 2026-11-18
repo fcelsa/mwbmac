@@ -31,7 +31,7 @@ final class UserActivity {
 
     func declare() {
         guard !UserActivity.isScreenLockedOrAsleep else { return }
-        IOPMAssertionDeclareUserActivity("mwbmac: attività su un'altra macchina" as CFString,
+        IOPMAssertionDeclareUserActivity("mwbmac: activity on another machine" as CFString,
                                          kIOPMUserActiveLocal, &assertion)
     }
 

@@ -5,7 +5,7 @@
 //   mwbmac probe                solo trasporto: connessione, handshake, heartbeat
 //   mwbmac run                  controllo completo con cattura dell'input
 //
-// Il bundle .app con barra menu arriva nella fase 5 della roadmap.
+// Messaggi e log in inglese; l'app da barra menu è `MWBMacHost`.
 
 import AppKit
 import Darwin
@@ -33,27 +33,27 @@ func fail(_ message: String) -> Never {
 
 func printUsage() {
     print("""
-    Uso: mwbmac <comando> [opzioni]
+    Usage: mwbmac <command> [options]
 
-    Comandi:
-      set-key        Salva nel Keychain la security key di Mouse Without Borders
-      delete-key     Rimuove la security key dal Keychain
-      config         Mostra percorso e contenuto delle preferenze
-      probe          Solo trasporto: si connette al PC, completa l'handshake e resta nel
-                     machine pool inviando heartbeat (nessuna cattura dell'input)
-      run            Controllo completo: bordo dello schermo, mouse e tastiera verso il PC
+    Commands:
+      set-key        Store the Mouse Without Borders security key in the Keychain
+      delete-key     Remove the security key from the Keychain
+      config         Show the settings file path and contents
+      probe          Transport only: connect to the PC, complete the handshake and stay
+                     in the machine pool sending heartbeats (no input capture)
+      run            Full control: screen edge, mouse and keyboard to the PC
 
-    Opzioni:
-      --host <nome>      Nome o indirizzo del PC (salvato nelle preferenze)
-      --name <nome>      Nome con cui il Mac si presenta (salvato nelle preferenze)
-      --edge <bordo>     left | right | top | bottom (salvato nelle preferenze)
-      --log-protocol     Stampa in chiaro ogni pacchetto inviato e ricevuto
-      --verbose          Messaggi di diagnosi
-      --no-listen        Non apre il listener sulla porta messaggi (base+1)
-      --duration <s>     Termina da solo dopo i secondi indicati (per le prove)
+    Options:
+      --host <name>      PC name or address (saved in the settings)
+      --name <name>      Name the Mac presents itself with (saved in the settings)
+      --edge <edge>      left | right | top | bottom (saved in the settings)
+      --verbose          Detailed diagnostic messages (default: errors and startup only)
+      --log-protocol     Print every packet sent and received in clear text
+      --no-listen        Do not open the listener on the message port (base+1)
+      --duration <s>     Exit by itself after the given seconds (for testing)
 
-    In stato remoto l'input del Mac è soppresso: la scorciatoia di emergenza
-    (predefinita ⌃⌥⌘Esc) riporta sempre il controllo al Mac.
+    While the PC is controlled the Mac's input is suppressed: the emergency
+    shortcut (default ⌃⌥⌘Esc) always brings control back to the Mac.
     """)
 }
 
@@ -67,7 +67,7 @@ func parseOptions() -> Options {
     var index = 0
     func value(for flag: String) -> String {
         index += 1
-        guard index < arguments.count else { fail("manca il valore di \(flag)") }
+        guard index < arguments.count else { fail("missing value for \(flag)") }
         return arguments[index]
     }
     while index < arguments.count {
@@ -77,16 +77,16 @@ func parseOptions() -> Options {
         case "--name": options.name = value(for: argument)
         case "--edge":
             let raw = value(for: argument)
-            guard let edge = ScreenEdge(rawValue: raw) else { fail("bordo non valido: \(raw)") }
+            guard let edge = ScreenEdge(rawValue: raw) else { fail("invalid edge: \(raw)") }
             options.edge = edge
         case "--log-protocol": options.logProtocol = true
         case "--verbose": options.verbose = true
         case "--no-listen": options.noListen = true
         case "--duration":
-            guard let seconds = TimeInterval(value(for: argument)) else { fail("durata non valida") }
+            guard let seconds = TimeInterval(value(for: argument)) else { fail("invalid duration") }
             options.duration = seconds
         case "-h", "--help": options.command = "help"
-        default: fail("opzione sconosciuta: \(argument)")
+        default: fail("unknown option: \(argument)")
         }
         index += 1
     }
@@ -98,14 +98,14 @@ func loadSettings(applying options: Options) -> Settings {
     do {
         settings = try Settings.load()
     } catch {
-        fail("preferenze illeggibili (\(Settings.defaultURL.path)): \(error)")
+        fail("unreadable settings (\(Settings.defaultURL.path)): \(error)")
     }
     let original = settings
     if let host = options.host { settings.remoteHost = host }
     if let name = options.name { settings.localName = name }
     if let edge = options.edge { settings.edge = edge }
     if settings != original {
-        do { try settings.save() } catch { fail("impossibile salvare le preferenze: \(error)") }
+        do { try settings.save() } catch { fail("cannot save the settings: \(error)") }
     }
     return settings
 }
@@ -118,7 +118,7 @@ func loadSecurityKey() -> String {
     }
     do {
         guard let key = try KeychainStore.readSecurityKey(), !key.isEmpty else {
-            fail("security key assente: eseguire prima `mwbmac set-key`")
+            fail("no security key: run `mwbmac set-key` first")
         }
         return key
     } catch {
@@ -127,15 +127,15 @@ func loadSecurityKey() -> String {
 }
 
 func setKey() {
-    guard let raw = getpass("Security key di Mouse Without Borders (non viene mostrata): ") else {
-        fail("lettura della chiave fallita")
+    guard let raw = getpass("Mouse Without Borders security key (not shown): ") else {
+        fail("cannot read the key")
     }
     let key = KeyDerivation.normalize(securityKey: String(cString: raw))
     // Stessa regola di `Encryption.IsKeyValid`.
-    guard key.count >= 16 else { fail("la chiave deve avere almeno 16 caratteri (gli spazi non contano)") }
+    guard key.count >= 16 else { fail("the key must be at least 16 characters long (spaces do not count)") }
     do {
         try KeychainStore.writeSecurityKey(key)
-        print("Chiave salvata nel Keychain (servizio \"\(KeychainStore.service)\").")
+        print("Key saved in the Keychain (service \"\(KeychainStore.service)\").")
     } catch {
         fail("\(error)")
     }
@@ -143,7 +143,7 @@ func setKey() {
 
 func makeSession(settings: Settings, options: Options, log: Log) -> Session {
     guard !settings.remoteHost.isEmpty else {
-        fail("nome del PC non configurato: usare --host <nome>")
+        fail("PC name not configured: use --host <name>")
     }
     var configuration = Session.Configuration(
         localName: settings.localName,
@@ -214,22 +214,22 @@ final class Runner {
         return [
             center.addObserver(forName: NSWorkspace.willSleepNotification, object: nil, queue: .main) { [self] _ in
                 guard session != nil else { return }
-                log.info("Il Mac va in stop: chiudo la sessione con il PC")
+                log.info("The Mac is going to sleep: closing the session with the PC")
                 suspendedForSleep = true
                 stop()
             },
             center.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [self] _ in
                 guard suspendedForSleep else { return }
                 suspendedForSleep = false
-                log.info("Il Mac si è risvegliato: riapro la sessione con il PC")
-                do { try start() } catch { log.info("Riavvio dopo il risveglio fallito: \(error)") }
+                log.info("The Mac woke up: reopening the session with the PC")
+                do { try start() } catch { log.error("Restart after wake failed: \(error)") }
             },
         ]
     }
 }
 
 let options = parseOptions()
-let log = Log(protocolEnabled: options.logProtocol, debugEnabled: options.verbose)
+let log = Log(verbose: options.verbose, protocolEnabled: options.logProtocol)
 
 switch options.command {
 case "set-key":
@@ -237,27 +237,27 @@ case "set-key":
 
 case "delete-key":
     do { try KeychainStore.deleteSecurityKey() } catch { fail("\(error)") }
-    print("Chiave rimossa dal Keychain.")
+    print("Key removed from the Keychain.")
 
 case "config":
     let settings = loadSettings(applying: options)
-    print("Preferenze: \(Settings.defaultURL.path)")
+    print("Settings: \(Settings.defaultURL.path)")
     if let text = try? String(contentsOf: Settings.defaultURL, encoding: .utf8) { print(text) }
     // Solo la forma della chiave, mai il valore: le chiavi generate da MWB hanno 16 caratteri.
     if let key = (try? KeychainStore.readSecurityKey()) ?? nil {
         let ascii = key.unicodeScalars.allSatisfy { $0.isASCII && $0.value > 0x20 && $0.value < 0x7F }
-        print("Security key nel Keychain: presente, \(key.count) caratteri\(ascii ? "" : ", contiene caratteri non ASCII o di controllo")")
+        print("Security key in the Keychain: present, \(key.count) characters\(ascii ? "" : ", contains non-ASCII or control characters")")
     } else {
-        print("Security key nel Keychain: assente")
+        print("Security key in the Keychain: missing")
     }
-    print("Scorciatoia di emergenza: \(settings.hotkey.description)")
+    print("Emergency shortcut: \(settings.hotkey.description)")
 
 case "probe":
     let settings = loadSettings(applying: options)
     let session = makeSession(settings: settings, options: options, log: log)
-    log.info("mwbmac probe: \"\(settings.localName)\" (id \(settings.machineID)) → \(settings.remoteHost):\(settings.basePort + 1)")
+    log.notice("mwbmac probe: \"\(settings.localName)\" (id \(settings.machineID)) → \(settings.remoteHost):\(settings.basePort + 1)")
     session.onMachineConnected = { machine in
-        log.info("Handshake completato: il Mac è nel machine pool di \"\(machine.name)\"")
+        log.notice("Handshake completed: the Mac is in the machine pool of \"\(machine.name)\"")
     }
     session.start()
     let signals = installExitHandlers(duration: options.duration) { session.stop() }
@@ -270,9 +270,9 @@ case "run":
     let monitoring = InputPermissions.hasInputMonitoring(prompt: true)
     guard accessibility, monitoring else {
         fail("""
-        permessi mancanti (\(accessibility ? "" : "Accessibilità ")\(monitoring ? "" : "Monitoraggio input")).
-        Concederli in Impostazioni di Sistema → Privacy e sicurezza all'applicazione da cui
-        viene lanciato mwbmac (Terminale, iTerm, …), poi riavviarla e rilanciare il comando.
+        missing permissions (\(accessibility ? "" : "Accessibility ")\(monitoring ? "" : "Input Monitoring")).
+        Grant them in System Settings → Privacy & Security to the application that launches
+        mwbmac (Terminal, iTerm, …), then restart it and run the command again.
         """)
     }
     let runner = Runner(settings: settings, options: options, log: log)
@@ -281,9 +281,9 @@ case "run":
     } catch {
         fail("\(error)")
     }
-    log.info("mwbmac: \"\(settings.localName)\" → \(settings.remoteHost), PC oltre il bordo \(settings.edge.rawValue), "
-        + "ritardo \(settings.switchDelayMs) ms, resistenza \(settings.edgeResistancePx) px")
-    log.info("Scorciatoia di emergenza / cambio manuale: \(settings.hotkey.description)")
+    log.notice("mwbmac: \"\(settings.localName)\" → \(settings.remoteHost), PC beyond the \(settings.edge.rawValue) edge, "
+        + "emergency shortcut \(settings.hotkey.description)")
+    log.info("Switch delay \(settings.switchDelayMs) ms, edge resistance \(settings.edgeResistancePx) px")
     let signals = installExitHandlers(duration: options.duration) { runner.stop() }
     let sleepObservers = runner.observeSleep()
     // Serve un vero ciclo di eventi AppKit: per nascondere e bloccare il cursore il

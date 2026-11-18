@@ -76,7 +76,7 @@ final class AppModel: ObservableObject {
         let center = NSWorkspace.shared.notificationCenter
         sleepObservers.append(center.addObserver(forName: NSWorkspace.willSleepNotification, object: nil, queue: .main) { [weak self] _ in
             guard let self, self.session != nil else { return }
-            self.log?.info("Il Mac va in stop: chiudo la sessione con il PC")
+            self.log?.info("The Mac is going to sleep: closing the session with the PC")
             self.suspendedForSleep = true
             self.stop()
         })
@@ -84,7 +84,7 @@ final class AppModel: ObservableObject {
             guard let self, self.suspendedForSleep else { return }
             self.suspendedForSleep = false
             self.start(resumingFromSleep: true)
-            self.log?.info("Il Mac si è risvegliato: riapro la sessione con il PC")
+            self.log?.info("The Mac woke up: reopening the session with the PC")
         })
     }
 
@@ -183,8 +183,9 @@ final class AppModel: ObservableObject {
         }
         keyForResume = key
 
+        // Normalmente solo errori, avvio e prima connessione con ciascuna macchina;
         // `defaults write local.mwbmac.host verbose -bool true` attiva i messaggi di diagnosi.
-        let log = Log(debugEnabled: UserDefaults.standard.bool(forKey: "verbose"))
+        let log = Log(verbose: UserDefaults.standard.bool(forKey: "verbose"))
         let standardSink = log.sink
         let logFile = AppModel.logFile
         log.sink = { [weak self] line in
@@ -205,6 +206,7 @@ final class AppModel: ObservableObject {
             try controller.start()
         } catch {
             // Il tap non parte se il permesso Accessibilità è stato revocato nel frattempo.
+            log.error("\(error)")
             lastMessage = "\(error)"
             status = .missingPermissions
             schedulePermissionCheck()
@@ -214,6 +216,9 @@ final class AppModel: ObservableObject {
         self.controller = controller
         self.log = log
         status = .connecting
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
+        log.notice("MWB Mac Host \(version) started: \"\(settings.localName)\" → \(settings.remoteHost), "
+            + "PC beyond the \(settings.edge.rawValue) edge")
         session.start()
     }
 

@@ -216,7 +216,7 @@ public enum KeychainStore {
     public struct KeychainError: Error, CustomStringConvertible {
         public let status: OSStatus
         public var description: String {
-            let message = SecCopyErrorMessageString(status, nil) as String? ?? "errore sconosciuto"
+            let message = SecCopyErrorMessageString(status, nil) as String? ?? "unknown error"
             return "Keychain: \(message) (\(status))"
         }
     }

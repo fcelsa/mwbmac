@@ -44,8 +44,8 @@ final class PeerConnection {
         var description: String {
             switch self {
             case .network(let detail): return detail
-            case .invalidKey: return "flusso illeggibile: la security key non coincide con quella del PC"
-            case .local: return "chiusa localmente"
+            case .invalidKey: return "unreadable stream: the security key does not match the PC's"
+            case .local: return "closed locally"
             }
         }
     }
@@ -126,7 +126,7 @@ final class PeerConnection {
             case .ready:
                 self.didBecomeReady()
             case .failed(let error):
-                self.close(.network("errore di rete: \(error)"))
+                self.close(.network("network error: \(error)"))
             case .waiting(let error):
                 // Host irraggiungibile o porta chiusa: ci pensa la sessione a riprovare.
                 self.close(.network("in attesa: \(error)"))
@@ -167,7 +167,7 @@ final class PeerConnection {
         if context.scheme == .auto {
             queue.asyncAfter(deadline: .now() + PeerConnection.detectionTimeout) { [weak self] in
                 guard let self, !self.isClosed, self.activeScheme == nil else { return }
-                self.context.log.debug("\(self.label): il peer non trasmette, parto con lo schema corrente")
+                self.context.log.debug("\(self.label): the peer is silent, starting with the current scheme")
                 self.adopt(scheme: .current)
             }
         } else {
@@ -180,7 +180,7 @@ final class PeerConnection {
     private func adopt(scheme: CipherScheme) {
         guard activeScheme == nil, !isClosed else { return }
         activeScheme = scheme
-        context.log.debug("\(label): schema di cifratura \(scheme.rawValue)")
+        context.log.debug("\(label): encryption scheme \(scheme.rawValue)")
         do {
             let stream: CipherStream
             if scheme == .legacy {
@@ -219,7 +219,7 @@ final class PeerConnection {
             if let error {
                 self.close(.network("ricezione fallita: \(error)"))
             } else if isComplete {
-                self.close(.network("chiusa dal peer"))
+                self.close(.network("closed by the peer"))
             } else if !self.isClosed {
                 self.receive()
             }
@@ -246,9 +246,9 @@ final class PeerConnection {
         let expected = [UInt8((context.magic >> 16) & 0xFF), UInt8((context.magic >> 24) & 0xFF)]
         func summary(_ plain: [UInt8]) -> String {
             let p = Array(plain[KeyDerivation.blockSize...])
-            return "tipo=\(p[0]) magic=\(p[2]),\(p[3]) (atteso \(expected[0]),\(expected[1]))"
+            return "type=\(p[0]) magic=\(p[2]),\(p[3]) (expected \(expected[0]),\(expected[1]))"
         }
-        context.log.debug("\(label): ricevuti \(cipherBuffer.count) byte; storico: \(summary(legacyPlain)); corrente: \(summary(currentPlain))")
+        context.log.debug("\(label): received \(cipherBuffer.count) bytes; legacy: \(summary(legacyPlain)); current: \(summary(currentPlain))")
         return nil
     }
 
@@ -305,12 +305,12 @@ final class PeerConnection {
                 handle(packet)
             } catch {
                 invalidCount += 1
-                context.log.debug("\(label): pacchetto non valido (\(error))")
+                context.log.debug("\(label): invalid packet (\(error))")
                 guard invalidCount > 5 else { continue }
                 // Prima della fiducia un flusso illeggibile vuol dire chiave diversa; dopo,
                 // la chiave è provata e si tratta di un guasto della connessione, che non
                 // deve bloccare i tentativi di riconnessione.
-                close(isTrusted ? .network("flusso corrotto") : .invalidKey)
+                close(isTrusted ? .network("corrupted stream") : .invalidKey)
             }
         }
     }
@@ -333,7 +333,7 @@ final class PeerConnection {
         case .handshakeAck:
             guard !isTrusted else { return } // gli altri nove Ack della stessa sfida
             guard Handshake.isValid(ack: packet, for: challenge) else {
-                context.log.debug("\(label): Ack non valido")
+                context.log.debug("\(label): invalid Ack")
                 close(.invalidKey)
                 return
             }
