@@ -65,7 +65,7 @@ porte 15100/15101 aperte nel firewall. Il nome del Mac deve essere risolvibile d
 
 ## Stato dell'implementazione
 
-Fasi 1–5 implementate (vedi `README.md`): eseguibile da riga di comando `mwbmac` e app da
+Fasi 1–6 completate (verifiche di campo comprese: DPI del PC, Universal Control su un bordo diverso; vedi `README.md`, in inglese con la parte italiana in coda): eseguibile da riga di comando `mwbmac` e app da
 barra menu `MWBMacHost`, il cui bundle si costruisce e firma con `scripts/build-app.sh`.
 Target SwiftPM: `MWBProtocol`, `MWBTransport`, `MWBInputCapture`, `MWBEdgeLogic`, `mwbmac`,
 `MWBMacHost`.

@@ -22,22 +22,22 @@ for argument in "$@"; do
         --debug) CONFIGURATION=debug ;;
         --install) INSTALL=true ;;
         --run) RUN=true ;;
-        *) echo "opzione sconosciuta: $argument" >&2; exit 2 ;;
+        *) echo "unknown option: $argument" >&2; exit 2 ;;
     esac
 done
 
 APP_NAME="MWB Mac Host"
 EXECUTABLE="MWBMacHost"
 BUNDLE_ID="${MWB_BUNDLE_ID:-local.mwbmac.host}"
-VERSION="${MWB_VERSION:-0.5.0}"
+VERSION="${MWB_VERSION:-1.0.0}"
 BUILD_NUMBER="$(git rev-list --count HEAD 2>/dev/null || echo 1)"
 IDENTITY="${MWB_SIGN_IDENTITY:-mwbmac local signing}"
 APP="build/$APP_NAME.app"
 
-echo "==> Traduzioni"
+echo "==> Translations"
 scripts/check-localization.sh
 
-echo "==> Compilazione ($CONFIGURATION)"
+echo "==> Build ($CONFIGURATION)"
 # Una sola compilazione per app e riga di comando. Con i soli Command Line Tools il linker
 # segnala percorsi di ricerca di Xcode che non esistono ("search path ... not found"):
 # sono avvisi innocui e vengono tolti dall'output; gli errori veri restano visibili e,
@@ -82,13 +82,13 @@ cat > "$APP/Contents/Info.plist" <<EOF
 EOF
 plutil -lint "$APP/Contents/Info.plist" >/dev/null
 
-echo "==> Firma"
+echo "==> Signing"
 if security find-certificate -c "$IDENTITY" >/dev/null 2>&1; then
     SIGN_AS="$IDENTITY"
-    echo "    identità locale: $IDENTITY"
+    echo "    local identity: $IDENTITY"
 else
     SIGN_AS="-"
-    echo "    firma ad hoc (nessuna identità \"$IDENTITY\": vedi scripts/create-signing-cert.sh)"
+    echo "    ad hoc signature (no \"$IDENTITY\" identity: see scripts/create-signing-cert.sh)"
 fi
 # Prima l'eseguibile annidato, poi il bundle.
 # "replacing existing signature" è normale: il linker firma già ad hoc ogni eseguibile.
@@ -98,14 +98,14 @@ codesign --verify --strict --verbose=1 "$APP"
 
 if $INSTALL; then
     DESTINATION="${MWB_INSTALL_DIR:-/Applications}"
-    echo "==> Installazione in $DESTINATION"
+    echo "==> Installing in $DESTINATION"
     pkill -x "$EXECUTABLE" 2>/dev/null || true
     rm -rf "$DESTINATION/$APP_NAME.app"
     cp -R "$APP" "$DESTINATION/"
     APP="$DESTINATION/$APP_NAME.app"
 fi
 
-echo "==> Pronto: $APP"
+echo "==> Ready: $APP"
 if $RUN; then
     open "$APP"
 fi

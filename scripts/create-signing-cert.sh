@@ -12,7 +12,7 @@ IDENTITY="${MWB_SIGN_IDENTITY:-mwbmac local signing}"
 KEYCHAIN="${1:-$HOME/Library/Keychains/login.keychain-db}"
 
 if security find-certificate -c "$IDENTITY" "$KEYCHAIN" >/dev/null 2>&1; then
-    echo "Il certificato \"$IDENTITY\" esiste già in $KEYCHAIN."
+    echo "The \"$IDENTITY\" certificate already exists in $KEYCHAIN."
     exit 0
 fi
 
@@ -42,5 +42,5 @@ P12_PASSWORD="$(/usr/bin/openssl rand -hex 16)"
 # -T autorizza codesign a usare la chiave privata senza chiedere ogni volta.
 security import "$WORK/identity.p12" -k "$KEYCHAIN" -P "$P12_PASSWORD" -T /usr/bin/codesign >/dev/null
 
-echo "Certificato \"$IDENTITY\" creato in $KEYCHAIN."
-echo "scripts/build-app.sh lo userà automaticamente."
+echo "Certificate \"$IDENTITY\" created in $KEYCHAIN."
+echo "scripts/build-app.sh will use it automatically."

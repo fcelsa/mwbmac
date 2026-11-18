@@ -28,15 +28,15 @@ for dir in "$RESOURCES"/*.lproj; do
     missing="$(comm -23 <(echo "$keys") <(echo "$defined"))"
     unused="$(comm -13 <(echo "$keys") <(echo "$defined"))"
     if [ -n "$missing" ]; then
-        echo "[$language] traduzioni mancanti:" >&2
+        echo "[$language] missing translations:" >&2
         echo "$missing" | sed 's/^/    /' >&2
         status=1
     fi
     if [ -n "$unused" ]; then
-        echo "[$language] chiavi non più usate nel codice:" >&2
+        echo "[$language] keys no longer used in the code:" >&2
         echo "$unused" | sed 's/^/    /' >&2
     fi
 done
 
-[ $status -eq 0 ] && echo "Localizzazione: tutte le chiavi tradotte."
+[ $status -eq 0 ] && echo "Localization: all keys translated."
 exit $status
