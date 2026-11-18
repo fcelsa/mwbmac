@@ -54,6 +54,8 @@ cp "$BIN_DIR/mwbmac" "$APP/Contents/MacOS/mwbmac"
 # Una cartella .lproj per lingua: macOS sceglie quella delle preferenze di sistema,
 # altrimenti l'inglese (CFBundleDevelopmentRegion).
 cp -R Sources/MWBMacHost/Resources/*.lproj "$APP/Contents/Resources/"
+# Icona dell'app (Finder, Launchpad, finestre dei permessi, "Informazioni su").
+cp Sources/MWBMacHost/Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 LOCALIZATIONS="$(for dir in Sources/MWBMacHost/Resources/*.lproj; do printf '<string>%s</string>' "$(basename "$dir" .lproj)"; done)"
 
 cat > "$APP/Contents/Info.plist" <<EOF
@@ -65,6 +67,7 @@ cat > "$APP/Contents/Info.plist" <<EOF
     <key>CFBundleDisplayName</key><string>$APP_NAME</string>
     <key>CFBundleIdentifier</key><string>$BUNDLE_ID</string>
     <key>CFBundleExecutable</key><string>$EXECUTABLE</string>
+    <key>CFBundleIconFile</key><string>AppIcon</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
     <key>CFBundleShortVersionString</key><string>$VERSION</string>

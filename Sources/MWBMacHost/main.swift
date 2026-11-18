@@ -9,6 +9,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let model = AppModel()
     private var statusItem: NSStatusItem!
     private var settingsWindow: NSWindow?
+    private var aboutWindow: NSWindow?
     private var subscriptions = Set<AnyCancellable>()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -98,6 +99,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(login)
         menu.addItem(item(L("Settings…"), #selector(showSettings), key: ","))
         menu.addItem(.separator())
+        menu.addItem(item(L("About MWB Mac Host"), #selector(showAbout)))
         menu.addItem(item(L("Quit MWB Mac Host"), #selector(quit), key: "q"))
     }
 
@@ -125,6 +127,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         NSApp.activate(ignoringOtherApps: true)
         settingsWindow?.makeKeyAndOrderFront(nil)
+    }
+
+    @objc private func showAbout() {
+        if aboutWindow == nil {
+            let window = NSWindow(contentViewController: NSHostingController(rootView: AboutView()))
+            window.title = L("About MWB Mac Host")
+            window.styleMask = [.titled, .closable]
+            window.isReleasedWhenClosed = false
+            window.center()
+            aboutWindow = window
+        }
+        NSApp.activate(ignoringOtherApps: true)
+        aboutWindow?.makeKeyAndOrderFront(nil)
     }
 }
 

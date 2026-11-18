@@ -123,3 +123,10 @@
 "Settings applied." = "Impostazioni applicate.";
 "The key must be at least 16 characters long." = "La chiave deve avere almeno 16 caratteri.";
 "Key saved in the Keychain." = "Chiave salvata nel portachiavi.";
+
+/* Informazioni su */
+"About MWB Mac Host" = "Informazioni su MWB Mac Host";
+"Version %@ (build %@)" = "Versione %@ (build %@)";
+"Use the Mac's keyboard and mouse on a Windows PC with PowerToys Mouse Without Borders." = "Tastiera e mouse del Mac su un PC Windows con PowerToys Mouse Without Borders.";
+"Project page" = "Pagina del progetto";
+"MIT License. Not affiliated with Microsoft. PowerToys and Mouse Without Borders are trademarks of Microsoft Corporation." = "Licenza MIT. Non affiliato a Microsoft. PowerToys e Mouse Without Borders sono marchi di Microsoft Corporation.";
